@@ -1,0 +1,15 @@
+{
+  "n_items": 9,
+  "n_parsed": 0,
+  "n_classes": 9,
+  "accuracy": 0.0,
+  "accuracy_ci": [
+    0.0,
+    0.0
+  ],
+  "macro_precision": NaN,
+  "macro_recall": 0.0,
+  "macro_f1": 0.0,
+  "parse_failure_rate": 1.0,
+  "provider_error_rate": 1.0
+}

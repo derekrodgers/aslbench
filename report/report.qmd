@@ -1,0 +1,158 @@
+---
+title: "aslbench Run Report"
+format:
+  html:
+    embed-resources: true
+    toc: true
+  typst:
+    toc: true
+params:
+  run_dir: ""
+jupyter: python3
+---
+
+```{python}
+# | tags: [parameters]
+# | echo: false
+run_dir = ""
+```
+
+```{python}
+# | echo: false
+import json
+import os
+from pathlib import Path
+
+import pandas as pd
+from IPython.display import Image, Markdown, display
+
+from aslbench import config, figures, runner, scoring
+
+run_dir = Path(run_dir)
+run_slug = run_dir.name
+
+config_data = json.loads((run_dir / "config.json").read_text())
+results = runner.model_results_list(run_slug)
+nonempty = [r for r in results if not r.df.empty]
+labels = [r.model_label for r in nonempty]
+colors = figures.assign_colors(labels)
+
+_OUTPUT_FMT = os.environ.get("QUARTO_OUTPUT_FORMAT", "html")
+
+
+def _show_fig(fig):
+    """Render a Plotly figure interactively (HTML) or as a PNG (Typst/PDF)."""
+    if _OUTPUT_FMT == "html":
+        fig.show()
+    else:
+        import plotly.io as pio
+        img_bytes = pio.to_image(fig, format="png", width=900, height=500)
+        display(Image(img_bytes))
+
+
+def _fmt_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Format float columns, replacing NaN with '--'."""
+    out = df.copy()
+    for col in out.select_dtypes(include="float").columns:
+        out[col] = out[col].apply(lambda v: f"{v:.3f}" if pd.notna(v) else "--")
+    return out
+```
+
+## Run metadata
+
+```{python}
+# | echo: false
+lines = [
+    f"- **Run:** {config_data['run_slug']}",
+    f"- **Started:** {config_data['started_at']}",
+    f"- **Images per class:** {config_data.get('n_per_class')}",
+    f"- **Classes:** {config_data.get('n_classes')}",
+    f"- **Total images:** {config_data['n_items']}",
+    f"- **Sample seed:** {config_data['sample_seed']}",
+    f"- **Prompt template:** {config_data['template_id']}",
+    f"- **Note:** {config_data.get('run_note') or '(none)'}",
+]
+Markdown("\n".join(lines))
+```
+
+```{python}
+# | echo: false
+model_rows = [
+    {"Provider": m["provider_label"], "Model": m["model_label"], "Slug": m["model_slug"]}
+    for m in config_data["models"]
+]
+pd.DataFrame(model_rows)
+```
+
+The task is 36-way single-character classification (ASL fingerspelling digits
+0-9 and letters A-Z). Every model saw the identical sampled images, so all
+differences are attributable to the model rather than the sample. Filenames,
+which encode the true class, are never shown to the models.
+
+## Comparison
+
+```{python}
+# | echo: false
+if nonempty:
+    display(scoring.comparison_table(nonempty))
+else:
+    display(Markdown("No results recorded."))
+```
+
+```{python}
+# | echo: false
+if nonempty:
+    _show_fig(figures.accuracy_bar(nonempty, colors))
+```
+
+```{python}
+# | echo: false
+if nonempty:
+    _show_fig(figures.per_class_accuracy_bars(nonempty, colors))
+```
+
+```{python}
+# | echo: false
+if nonempty:
+    _show_fig(figures.confusion_heatmaps(nonempty, colors))
+```
+
+```{python}
+# | echo: false
+if nonempty:
+    _show_fig(figures.per_participant_bars(nonempty, colors))
+```
+
+```{python}
+# | echo: false
+pair = figures.pairwise_agreement_fig(nonempty) if len(nonempty) >= 2 else None
+if pair is not None:
+    _show_fig(pair)
+```
+
+## Per-model detail
+
+```{python}
+# | echo: false
+for res in nonempty:
+    display(Markdown(f"### {res.model_label}"))
+
+    summ = scoring.compute_summary(res.df)
+    display(Markdown(
+        f"Accuracy {summ['accuracy']:.3f}, macro F1 {summ['macro_f1']:.3f}, "
+        f"parse-failure rate {summ['parse_failure_rate']:.3f}."
+    ))
+
+    display(Markdown("**Per-class metrics**"))
+    display(_fmt_table(scoring.per_class_table(res.df)))
+
+    display(Markdown("**Most-confused pairs**"))
+    display(scoring.most_confused(res.df, top_n=10))
+
+    # A sample of misclassified items (images are viewable in the dashboard's
+    # item explorer; a static table keeps the report identical in HTML and PDF).
+    wrong = res.df[(res.df["parse_ok"]) & (~res.df["correct"])].head(12)
+    if not wrong.empty:
+        display(Markdown("**Sample misclassifications**"))
+        display(wrong[["item_id", "true_char", "predicted_char"]].reset_index(drop=True))
+```

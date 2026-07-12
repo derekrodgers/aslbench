@@ -1,0 +1,15 @@
+{
+  "n_items": 36,
+  "n_parsed": 36,
+  "n_classes": 36,
+  "accuracy": 0.4166666666666667,
+  "accuracy_ci": [
+    0.25,
+    0.5833333333333334
+  ],
+  "macro_precision": 0.5583333333333333,
+  "macro_recall": 0.4166666666666667,
+  "macro_f1": 0.337037037037037,
+  "parse_failure_rate": 0.0,
+  "provider_error_rate": 0.0
+}
