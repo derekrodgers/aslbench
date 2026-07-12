@@ -21,3 +21,4 @@ dependencies:
       - openai
       - anthropic
       - github-copilot-sdk
+      - kaleido

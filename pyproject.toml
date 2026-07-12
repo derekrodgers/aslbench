@@ -26,6 +26,9 @@ providers = [
 test = [
     "pytest",
 ]
+report = [
+    "kaleido",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
