@@ -90,6 +90,26 @@ class OpenAICompatProvider:
             latency = time.monotonic() - start
             text = resp.choices[0].message.content or ""
             finish_reason = resp.choices[0].finish_reason
+
+            # Capture the reasoning/thinking trace when the server separates it
+            # from the final answer (DeepSeek-style field used by oMLX, vLLM, …).
+            msg = resp.choices[0].message
+            thinking: str = (
+                getattr(msg, "reasoning_content", None)
+                or getattr(msg, "thinking", None)
+                or ""
+            )
+            thinking = thinking.strip()
+
+            # Fallback: some servers embed thinking inside <think>…</think> tags
+            # at the start of message.content.  Extract and remove those tags.
+            if not thinking and text.startswith("<think>"):
+                import re as _re
+                m = _re.match(r"<think>(.*?)</think>\s*", text, _re.DOTALL | _re.IGNORECASE)
+                if m:
+                    thinking = m.group(1).strip()
+                    text = text[m.end():].strip()
+
             if finish_reason == "length":
                 # Generation stopped at the token cap before the model could
                 # write ANSWER: X.  Tag the response so it shows up visibly in
@@ -106,6 +126,7 @@ class OpenAICompatProvider:
                 latency_s=latency,
                 input_tokens=in_tok,
                 output_tokens=out_tok,
+                thinking=thinking or None,
             )
 
         return retry_call(_call)

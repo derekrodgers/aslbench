@@ -32,6 +32,7 @@ class CompletionResult:
     input_tokens: int | None = None
     output_tokens: int | None = None
     error: str | None = None  # non-None when the call failed after retries
+    thinking: str | None = None  # reasoning trace, when provided separately
 
 
 @runtime_checkable

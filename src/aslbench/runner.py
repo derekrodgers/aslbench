@@ -285,6 +285,7 @@ def _run_model(
                     "true_char": true_char,
                     "participant": item.get("participant", ""),
                     "raw_response": text,
+                    "thinking": result.thinking or "",
                     "predicted_char": sc["predicted_char"],
                     "parse_ok": sc["parse_ok"],
                     "correct": sc["correct"],

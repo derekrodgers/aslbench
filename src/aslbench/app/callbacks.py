@@ -412,6 +412,7 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
             match = df[df["item_id"] == item_id]
             if match.empty:
                 summary = html.Small("(no data)", className="text-muted")
+                thinking_text = ""
                 resp = ""
             else:
                 r = match.iloc[0]
@@ -443,15 +444,43 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
                         className="text-muted ms-2",
                     )
                 summary = html.Div([badge, detail, tok_info], className="mb-1")
+
+                # Thinking trace — stored separately by newer runs or extracted
+                # from <think>…</think> tags for servers that embed them inline.
+                thinking_text = str(r.get("thinking") or "").strip()
                 resp = str(r.get("raw_response") or "")
+                # Fallback for old runs: extract <think> block from raw_response.
+                if not thinking_text and resp.lstrip().startswith("<think>"):
+                    import re as _re
+                    _m = _re.match(r"<think>(.*?)</think>\s*", resp.lstrip(),
+                                   _re.DOTALL | _re.IGNORECASE)
+                    if _m:
+                        thinking_text = _m.group(1).strip()
+                        resp = resp.lstrip()[_m.end():].strip()
+
+            _pre_style = {"maxHeight": "600px", "overflowY": "auto",
+                          "whiteSpace": "pre-wrap", "wordBreak": "break-word"}
+            body_parts: list = [summary]
+            if thinking_text:
+                body_parts.append(
+                    dbc.Accordion(
+                        [
+                            dbc.AccordionItem(
+                                html.Pre(thinking_text, className="small",
+                                         style={**_pre_style, "maxHeight": "400px"}),
+                                title="💭 Thinking",
+                                item_id="thinking",
+                            )
+                        ],
+                        # active_item omitted → collapsed by default
+                        className="mb-2",
+                        always_open=False,
+                    )
+                )
+            body_parts.append(html.Pre(resp, className="small mt-1", style=_pre_style))
             panes.append(
                 dbc.AccordionItem(
-                    html.Div([
-                        summary,
-                        html.Pre(resp, className="small mt-1",
-                                 style={"maxHeight": "600px", "overflowY": "auto",
-                                        "whiteSpace": "pre-wrap", "wordBreak": "break-word"}),
-                    ]),
+                    html.Div(body_parts),
                     title=m["model_label"],
                     item_id=f"item-{len(panes)}",
                 )
