@@ -1,8 +1,0 @@
-{
-  "status": "running",
-  "started_at": "2026-07-11T22:11:37",
-  "finished_at": null,
-  "models": {
-    "omlx-qwen3-6-35b-a3b-ud-mlx-4bit": "running"
-  }
-}

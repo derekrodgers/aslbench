@@ -17,7 +17,7 @@ from ..config import IMAGE_MEDIA_TYPE
 from ..config import ProviderConfig
 from . import CompletionResult, ModelInfo, retry_call
 
-MAX_TOKENS = 2000
+MAX_TOKENS_DEFAULT = 16384  # generous default; thinking models need headroom
 
 
 def _encode_image(image_path: Path) -> str:
@@ -31,6 +31,11 @@ class OpenAICompatProvider:
         self.label = cfg.label
         self._cfg = cfg
         self._client = None
+        # Configurable via  extra.max_tokens  in providers.yaml.
+        # Thinking models (Qwen3, DeepSeek-R1, …) stream the full reasoning
+        # trace into message.content and can easily exceed 2 000 tokens before
+        # reaching the ANSWER line, so the default is intentionally high.
+        self._max_tokens: int = int(cfg.extra.get("max_tokens", MAX_TOKENS_DEFAULT))
 
     def _get_client(self):
         if self._client is None:
@@ -55,6 +60,7 @@ class OpenAICompatProvider:
         client = self._get_client()
         b64 = _encode_image(image_path)
         data_url = f"data:{IMAGE_MEDIA_TYPE};base64,{b64}"
+        max_tokens = self._max_tokens
 
         def _call() -> CompletionResult:
             start = time.monotonic()
@@ -69,7 +75,7 @@ class OpenAICompatProvider:
                         ],
                     }
                 ],
-                max_tokens=MAX_TOKENS,
+                max_tokens=max_tokens,
             )
             try:
                 resp = client.chat.completions.create(temperature=0, **kwargs)
@@ -78,6 +84,15 @@ class OpenAICompatProvider:
                 resp = client.chat.completions.create(**kwargs)
             latency = time.monotonic() - start
             text = resp.choices[0].message.content or ""
+            finish_reason = resp.choices[0].finish_reason
+            if finish_reason == "length":
+                # Generation stopped at the token cap before the model could
+                # write ANSWER: X.  Tag the response so it shows up visibly in
+                # the item explorer rather than looking like a plain parse-failure.
+                text += (
+                    f"\n\n[TRUNCATED — hit max_tokens={max_tokens}. "
+                    "Increase via  extra.max_tokens  in providers.yaml.]"
+                )
             usage = getattr(resp, "usage", None)
             in_tok = getattr(usage, "prompt_tokens", None) if usage else None
             out_tok = getattr(usage, "completion_tokens", None) if usage else None
