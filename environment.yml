@@ -1,0 +1,23 @@
+name: aslbench
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - dash
+  - dash-bootstrap-components
+  - plotly
+  - pandas
+  - numpy
+  - pyarrow
+  - pyyaml
+  - pytest
+  - jupyter
+  - nbformat
+  - nbclient
+  - ipykernel
+  - papermill
+  - pip
+  - pip:
+      - openai
+      - anthropic
+      - github-copilot-sdk

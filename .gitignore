@@ -1,0 +1,25 @@
+copilot-sdk-docs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Environment
+.DS_Store
+
+# Raw ASL-HG dataset: too large to track. Rebuild data/processed/ from it with
+# scripts/subset_dataset.py. Download the raw dataset from
+# https://data.mendeley.com/datasets/j4y5w2c8w9/1
+data/raw/
+
+# Rendered reports
+exports/
+
+# Quarto intermediates
+report/*_files/
+report/.quarto/
+.quarto/

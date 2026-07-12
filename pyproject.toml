@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aslbench"
+version = "0.1.0"
+description = "A benchmark measuring frontier VLM recognition of ASL fingerspelling handshapes"
+requires-python = ">=3.11"
+dependencies = [
+    "dash",
+    "dash-bootstrap-components",
+    "plotly",
+    "pandas",
+    "numpy",
+    "pyarrow",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+providers = [
+    "openai",
+    "anthropic",
+    "github-copilot-sdk",
+]
+test = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+aslbench = ["prompts/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

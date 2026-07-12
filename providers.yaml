@@ -1,0 +1,23 @@
+providers:
+  - id: copilot
+    type: copilot_sdk
+    label: "GitHub Copilot"
+  - id: anthropic
+    type: anthropic
+    label: "Anthropic API"
+    api_key_env: ANTHROPIC_API_KEY
+  - id: openai
+    type: openai_compatible
+    label: "OpenAI API"
+    base_url: "https://api.openai.com/v1"
+    api_key_env: OPENAI_API_KEY
+  - id: lmstudio
+    type: openai_compatible
+    label: "LM Studio (local)"
+    base_url: "http://localhost:1234/v1"
+    api_key_env: null
+  - id: omlx
+    type: openai_compatible
+    label: "oMLX (local)"
+    base_url: "http://127.0.0.1:8000/v1"
+    api_key_env: null
