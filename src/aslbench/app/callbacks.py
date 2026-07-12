@@ -300,7 +300,7 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
             )
             df = runner.load_model_results(slug, m["model_slug"])
             if not df.empty:
-                tail = df.tail(3)
+                tail = df.tail(12)
                 for _, r in tail.iterrows():
                     err = str(r.get("provider_error") or "")
                     short_err = (err[:80] + "…") if len(err) > 80 else err
@@ -449,15 +449,22 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
                     html.Div([
                         summary,
                         html.Pre(resp, className="small mt-1",
-                                 style={"maxHeight": "400px", "overflowY": "auto"}),
+                                 style={"maxHeight": "600px", "overflowY": "auto",
+                                        "whiteSpace": "pre-wrap", "wordBreak": "break-word"}),
                     ]),
                     title=m["model_label"],
+                    item_id=f"item-{len(panes)}",
                 )
             )
+        # Build list of item IDs so all panes start open.
+        open_ids = [f"item-{i}" for i in range(len(panes))]
         return dbc.Row(
             [
                 dbc.Col(img, width=5),
-                dbc.Col(dbc.Accordion(panes, start_collapsed=True), width=7),
+                dbc.Col(
+                    dbc.Accordion(panes, active_item=open_ids, always_open=True),
+                    width=7,
+                ),
             ]
         )
 
@@ -633,6 +640,15 @@ def _build_results_view(slug: str) -> html.Div:
     if pair_fig is not None:
         figs.append(dcc.Graph(figure=pair_fig))
 
+    # Lay out figures two-per-row.
+    fig_rows = []
+    for i in range(0, len(figs), 2):
+        pair = figs[i : i + 2]
+        cols = [dbc.Col(f, width=6) for f in pair]
+        if len(cols) == 1:
+            cols[0] = dbc.Col(pair[0], width=12)
+        fig_rows.append(dbc.Row(cols, className="mb-2"))
+
     # Most-confused pairs, one small table per model.
     confused_blocks = [html.H5("Most-confused pairs", className="mt-3")]
     for res in nonempty:
@@ -683,7 +699,7 @@ def _build_results_view(slug: str) -> html.Div:
             meta,
             html.H5("Comparison"),
             comp_table,
-            *figs,
+            *fig_rows,
             *confused_blocks,
             html.H5("Item explorer", className="mt-3"),
             html.Small("Click a row to see the image and each model's response."),
