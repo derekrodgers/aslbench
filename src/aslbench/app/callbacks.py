@@ -410,9 +410,49 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
         for m in cfg["models"]:
             df = runner.load_model_results(slug, m["model_slug"])
             match = df[df["item_id"] == item_id]
-            resp = match.iloc[0]["raw_response"] if not match.empty else "(no response)"
+            if match.empty:
+                summary = html.Small("(no data)", className="text-muted")
+                resp = ""
+            else:
+                r = match.iloc[0]
+                predicted = r.get("predicted_char")
+                parse_ok = bool(r.get("parse_ok", False))
+                correct = bool(r.get("correct", False))
+                err = str(r.get("provider_error") or "")
+                if err:
+                    badge = dbc.Badge("error", color="warning", className="me-1")
+                    detail = html.Small(err[:120], className="text-warning")
+                elif not parse_ok:
+                    badge = dbc.Badge("parse-failure", color="secondary", className="me-1")
+                    detail = html.Small("No valid ANSWER: X found", className="text-muted")
+                elif correct:
+                    badge = dbc.Badge(f"✓ {predicted}", color="success", className="me-1")
+                    detail = html.Small(f"Correct — predicted {predicted!r}", className="text-success")
+                else:
+                    badge = dbc.Badge(f"✗ {predicted}", color="danger", className="me-1")
+                    detail = html.Small(
+                        f"Wrong — predicted {predicted!r}, true was {r['true_char']!r}",
+                        className="text-danger",
+                    )
+                in_tok = r.get("input_tokens")
+                out_tok = r.get("output_tokens")
+                tok_info = ""
+                if in_tok is not None and out_tok is not None:
+                    tok_info = html.Small(
+                        f" · {int(in_tok)} in / {int(out_tok)} out tokens",
+                        className="text-muted ms-2",
+                    )
+                summary = html.Div([badge, detail, tok_info], className="mb-1")
+                resp = str(r.get("raw_response") or "")
             panes.append(
-                dbc.AccordionItem(html.Pre(resp, className="small"), title=m["model_label"])
+                dbc.AccordionItem(
+                    html.Div([
+                        summary,
+                        html.Pre(resp, className="small mt-1",
+                                 style={"maxHeight": "400px", "overflowY": "auto"}),
+                    ]),
+                    title=m["model_label"],
+                )
             )
         return dbc.Row(
             [
@@ -626,6 +666,14 @@ def _build_results_view(slug: str) -> html.Div:
         ] + [
             {"if": {"filter_query": f'{{{lab}}} = "incorrect"', "column_id": lab},
              "backgroundColor": "#f8d7da"}
+            for lab in labels
+        ] + [
+            {"if": {"filter_query": f'{{{lab}}} = "parse-failure"', "column_id": lab},
+             "backgroundColor": "#e2e3e5", "color": "#6c757d"}
+            for lab in labels
+        ] + [
+            {"if": {"filter_query": f'{{{lab}}} = "error"', "column_id": lab},
+             "backgroundColor": "#fff3cd", "color": "#856404"}
             for lab in labels
         ],
     )

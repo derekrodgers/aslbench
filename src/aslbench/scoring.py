@@ -239,7 +239,7 @@ def comparison_table(results: list[ModelResult]) -> pd.DataFrame:
 def outcome_matrix(results: list[ModelResult]) -> pd.DataFrame:
     """One row per item; columns are true_char plus each model's outcome.
 
-    Outcomes are "correct", "incorrect", or "parse-failure".
+    Outcomes are "correct", "incorrect", "parse-failure", or "error".
     """
     if not results:
         return pd.DataFrame()
@@ -247,7 +247,9 @@ def outcome_matrix(results: list[ModelResult]) -> pd.DataFrame:
     for res in results:
         col = []
         for _, row in res.df.iterrows():
-            if not row["parse_ok"]:
+            if row.get("provider_error"):
+                col.append("error")
+            elif not row["parse_ok"]:
                 col.append("parse-failure")
             elif row["correct"]:
                 col.append("correct")
