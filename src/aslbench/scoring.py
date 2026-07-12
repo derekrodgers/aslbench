@@ -10,13 +10,23 @@ parse_ok, correct, provider_error.
 
 from __future__ import annotations
 
+import math
 import re
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    cohen_kappa_score,
+    f1_score,
+    matthews_corrcoef,
+    precision_recall_fscore_support,
+)
 
-from .config import CLASSES
+from .config import CLASSES, N_CLASSES
 
 # Valid output characters, uppercased.
 _VALID = set(CLASSES)
@@ -63,11 +73,26 @@ def score_item(predicted_char: str | None, true_char: str) -> dict:
     }
 
 
-def _safe_nanmean(series: pd.Series) -> float:
-    """Mean ignoring NaNs; returns NaN for an all-NaN input without warning."""
-    arr = series.to_numpy(dtype=float)
-    mask = ~np.isnan(arr)
-    return float(arr[mask].mean()) if mask.any() else float("nan")
+def _y_true_pred(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Return aligned (y_true, y_pred) arrays for sklearn metrics.
+
+    Parse failures are mapped to PARSE_FAIL_SYMBOL so they count as a wrong
+    prediction that is never a false positive for any real class.
+    """
+    y_true = df["true_char"].to_numpy()
+    y_pred = df["predicted_char"].where(df["parse_ok"], PARSE_FAIL_SYMBOL).to_numpy()
+    return y_true, y_pred
+
+
+def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for a binomial proportion k/n."""
+    if n == 0:
+        return (float("nan"), float("nan"))
+    phat = k / n
+    denom = 1.0 + z * z / n
+    center = (phat + z * z / (2 * n)) / denom
+    margin = (z / denom) * math.sqrt(phat * (1 - phat) / n + z * z / (4 * n * n))
+    return (max(0.0, center - margin), min(1.0, center + margin))
 
 
 def _bootstrap_ci(
@@ -89,47 +114,71 @@ def _bootstrap_ci(
     return (lo, hi)
 
 
-def _per_class_prf(df: pd.DataFrame) -> pd.DataFrame:
-    """Precision, recall, F1, accuracy, and support per true class.
+def _bootstrap_metric_ci(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    metric,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int = BOOTSTRAP_SEED,
+) -> tuple[float, float]:
+    """95% percentile bootstrap CI for an arbitrary (y_true, y_pred) metric."""
+    n = len(y_true)
+    if n == 0:
+        return (float("nan"), float("nan"))
+    rng = np.random.default_rng(seed)
+    vals = np.empty(resamples)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for i in range(resamples):
+            idx = rng.integers(0, n, n)
+            vals[i] = metric(y_true[idx], y_pred[idx])
+    return (float(np.percentile(vals, 2.5)), float(np.percentile(vals, 97.5)))
 
-    Parse failures count as an incorrect prediction (a false negative for the
-    true class, but not a false positive for any class).
+
+def _per_class_prf(df: pd.DataFrame) -> pd.DataFrame:
+    """Precision, recall, F1, accuracy, support, and Wilson recall CI per class.
+
+    Computed with scikit-learn. Parse failures count as an incorrect prediction
+    (a false negative for the true class, never a false positive for any class).
+    Per-class accuracy equals recall in single-label classification.
     """
     classes = sorted(df["true_char"].unique())
+    y_true, y_pred = _y_true_pred(df)
+    precision, recall, f1, support = precision_recall_fscore_support(
+        y_true, y_pred, labels=classes, zero_division=0
+    )
     rows = []
-    for c in classes:
-        support = int((df["true_char"] == c).sum())
-        tp = int(((df["true_char"] == c) & (df["predicted_char"] == c)).sum())
-        fp = int(((df["true_char"] != c) & (df["predicted_char"] == c)).sum())
-        fn = support - tp
-        precision = tp / (tp + fp) if (tp + fp) else float("nan")
-        recall = tp / (tp + fn) if (tp + fn) else float("nan")
-        if precision == precision and recall == recall and (precision + recall) > 0:
-            f1 = 2 * precision * recall / (precision + recall)
-        else:
-            f1 = 0.0 if support else float("nan")
+    for i, c in enumerate(classes):
+        support_c = int(support[i])
+        tp = int(((y_true == c) & (y_pred == c)).sum())
+        lo, hi = wilson_interval(tp, support_c)
         rows.append(
             {
                 "true_char": c,
-                "support": support,
+                "support": support_c,
                 "n_correct": tp,
-                "accuracy": tp / support if support else float("nan"),
-                "precision": precision,
-                "recall": recall,
-                "f1": f1,
+                "accuracy": float(recall[i]),
+                "precision": float(precision[i]),
+                "recall": float(recall[i]),
+                "recall_lo": lo,
+                "recall_hi": hi,
+                "f1": float(f1[i]),
             }
         )
     return pd.DataFrame(rows)
 
 
 def compute_summary(df: pd.DataFrame) -> dict:
-    """Compute all per-model metrics for a results DataFrame."""
+    """Compute all per-model metrics for a results DataFrame (via scikit-learn)."""
     n = len(df)
     if n == 0:
         return {"n_items": 0}
 
+    y_true, y_pred = _y_true_pred(df)
+    classes = sorted(df["true_char"].unique())
     correct = df["correct"].to_numpy(dtype=float)
-    acc = float(np.mean(correct))
+
+    acc = float(accuracy_score(y_true, y_pred))
     acc_lo, acc_hi = _bootstrap_ci(correct)
 
     parse_failures = int((~df["parse_ok"]).sum())
@@ -137,10 +186,20 @@ def compute_summary(df: pd.DataFrame) -> dict:
         int(df["provider_error"].fillna("").astype(bool).sum()) if "provider_error" in df else 0
     )
 
-    prf = _per_class_prf(df)
-    macro_precision = _safe_nanmean(prf["precision"]) if not prf.empty else float("nan")
-    macro_recall = _safe_nanmean(prf["recall"]) if not prf.empty else float("nan")
-    macro_f1 = _safe_nanmean(prf["f1"]) if not prf.empty else float("nan")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        macro_precision, macro_recall, macro_f1, _ = precision_recall_fscore_support(
+            y_true, y_pred, labels=classes, average="macro", zero_division=0
+        )
+        balanced_acc = float(balanced_accuracy_score(y_true, y_pred))
+        mcc = float(matthews_corrcoef(y_true, y_pred))
+        kappa = float(cohen_kappa_score(y_true, y_pred))
+
+    def _macro_f1(yt, yp):
+        return f1_score(yt, yp, labels=classes, average="macro", zero_division=0)
+
+    macro_f1_ci = _bootstrap_metric_ci(y_true, y_pred, _macro_f1)
+    mcc_ci = _bootstrap_metric_ci(y_true, y_pred, matthews_corrcoef)
 
     return {
         "n_items": n,
@@ -148,37 +207,29 @@ def compute_summary(df: pd.DataFrame) -> dict:
         "n_classes": int(df["true_char"].nunique()),
         "accuracy": acc,
         "accuracy_ci": [acc_lo, acc_hi],
-        "macro_precision": macro_precision,
-        "macro_recall": macro_recall,
-        "macro_f1": macro_f1,
+        "balanced_accuracy": balanced_acc,
+        "macro_precision": float(macro_precision),
+        "macro_recall": float(macro_recall),
+        "macro_f1": float(macro_f1),
+        "macro_f1_ci": [macro_f1_ci[0], macro_f1_ci[1]],
+        "mcc": mcc,
+        "mcc_ci": [mcc_ci[0], mcc_ci[1]],
+        "cohen_kappa": kappa,
         "parse_failure_rate": parse_failures / n,
         "provider_error_rate": provider_errors / n,
     }
 
 
 def per_class_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-class accuracy, precision, recall, F1, and support."""
+    """Per-class accuracy, precision, recall (+Wilson CI), F1, and support."""
     if df.empty:
         return pd.DataFrame(
-            columns=["true_char", "support", "n_correct", "accuracy", "precision", "recall", "f1"]
+            columns=[
+                "true_char", "support", "n_correct", "accuracy",
+                "precision", "recall", "recall_lo", "recall_hi", "f1",
+            ]
         )
     return _per_class_prf(df)
-
-
-def per_participant_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Accuracy stratified by participant (analogous to a per-subject table)."""
-    if "participant" not in df.columns or df.empty:
-        return pd.DataFrame(columns=["participant", "n", "accuracy"])
-    rows = []
-    for participant, group in df.groupby("participant"):
-        rows.append(
-            {
-                "participant": participant,
-                "n": len(group),
-                "accuracy": float(group["correct"].mean()),
-            }
-        )
-    return pd.DataFrame(rows).sort_values("participant").reset_index(drop=True)
 
 
 def confusion_long(df: pd.DataFrame) -> pd.DataFrame:
@@ -219,20 +270,46 @@ class ModelResult:
 
 _COMPARISON_METRICS = [
     "accuracy",
+    "balanced_accuracy",
     "macro_f1",
+    "mcc",
+    "cohen_kappa",
     "macro_precision",
     "macro_recall",
     "parse_failure_rate",
     "provider_error_rate",
 ]
 
+# Expected metric values for a uniform-random classifier over N_CLASSES balanced
+# classes: accuracy, balanced accuracy, and (approx) macro P/R/F1 all equal 1/C,
+# while MCC and Cohen's kappa are 0 (no better than chance). Shown as a baseline
+# column so absolute scores are interpretable against random guessing.
+_CHANCE_LABEL = f"Chance (1/{N_CLASSES})"
+
+
+def _chance_baseline() -> dict:
+    p = 1.0 / N_CLASSES
+    return {
+        "accuracy": p,
+        "balanced_accuracy": p,
+        "macro_f1": p,
+        "mcc": 0.0,
+        "cohen_kappa": 0.0,
+        "macro_precision": p,
+        "macro_recall": p,
+        "parse_failure_rate": 0.0,
+        "provider_error_rate": 0.0,
+    }
+
 
 def comparison_table(results: list[ModelResult]) -> pd.DataFrame:
-    """Metrics as rows, one column per model."""
+    """Metrics as rows, one column per model, plus a random-chance baseline."""
     data: dict[str, list] = {"metric": _COMPARISON_METRICS}
     for res in results:
         summ = compute_summary(res.df)
         data[res.model_label] = [summ.get(m) for m in _COMPARISON_METRICS]
+    baseline = _chance_baseline()
+    data[_CHANCE_LABEL] = [baseline[m] for m in _COMPARISON_METRICS]
     return pd.DataFrame(data)
 
 
@@ -259,66 +336,63 @@ def outcome_matrix(results: list[ModelResult]) -> pd.DataFrame:
     return base.reset_index()
 
 
-def pairwise_agreement(results: list[ModelResult]) -> pd.DataFrame:
-    """McNemar-style discordance counts for each model pair."""
-    rows = []
-    correctness = {}
-    for res in results:
-        correctness[res.model_label] = res.df.set_index("item_id")["correct"].astype(bool)
+def _mcnemar_exact_p(b: int, c: int) -> float:
+    """Two-sided exact McNemar p-value from discordant counts b and c.
+
+    Under H0 (equal error rates), each discordant item is a fair coin flip, so
+    the smaller count follows Binomial(b + c, 0.5). No SciPy dependency: the
+    binomial tail is summed directly with math.comb.
+    """
+    n = b + c
+    if n == 0:
+        return 1.0
+    k = min(b, c)
+    tail = sum(math.comb(n, i) for i in range(0, k + 1)) * (0.5 ** n)
+    return min(1.0, 2.0 * tail)
+
+
+def mcnemar_table(results: list[ModelResult]) -> pd.DataFrame:
+    """Exact two-sided McNemar test for every model pair on shared items.
+
+    All models see the identical images, so correctness is paired per item. For
+    each pair we report the discordant counts (only-A-correct, only-B-correct),
+    the exact p-value, and which model did better on discordant items.
+    """
+    cols = [
+        "model_a", "model_b", "only_a_correct", "only_b_correct",
+        "n_discordant", "p_value", "better",
+    ]
+    if len(results) < 2:
+        return pd.DataFrame(columns=cols)
+    correctness = {
+        r.model_label: r.df.set_index("item_id")["correct"].astype(bool) for r in results
+    }
     labels = [r.model_label for r in results]
+    rows = []
     for i in range(len(labels)):
         for j in range(i + 1, len(labels)):
             a = correctness[labels[i]]
-            b = correctness[labels[j]]
-            common = a.index.intersection(b.index)
-            a2, b2 = a.loc[common], b.loc[common]
+            b_series = correctness[labels[j]]
+            common = a.index.intersection(b_series.index)
+            a2, b2 = a.loc[common], b_series.loc[common]
+            b = int((a2 & ~b2).sum())  # only model_a correct
+            c = int((~a2 & b2).sum())  # only model_b correct
+            p = _mcnemar_exact_p(b, c)
+            if b > c:
+                better = labels[i]
+            elif c > b:
+                better = labels[j]
+            else:
+                better = "tie"
             rows.append(
                 {
                     "model_a": labels[i],
                     "model_b": labels[j],
-                    "both_correct": int((a2 & b2).sum()),
-                    "both_incorrect": int((~a2 & ~b2).sum()),
-                    "only_a_correct": int((a2 & ~b2).sum()),
-                    "only_b_correct": int((~a2 & b2).sum()),
+                    "only_a_correct": b,
+                    "only_b_correct": c,
+                    "n_discordant": b + c,
+                    "p_value": p,
+                    "better": better,
                 }
             )
-    return pd.DataFrame(rows)
-
-
-def hardest_easiest(results: list[ModelResult]) -> dict:
-    """Item ids all models missed, and item ids all models got."""
-    matrix = outcome_matrix(results)
-    if matrix.empty:
-        return {"hardest": [], "easiest": []}
-    model_cols = [r.model_label for r in results]
-    correct_counts = (matrix[model_cols] == "correct").sum(axis=1)
-    n_models = len(model_cols)
-    easiest = matrix.loc[correct_counts == n_models, "item_id"].tolist()
-    hardest = matrix.loc[correct_counts == 0, "item_id"].tolist()
-    return {"hardest": hardest, "easiest": easiest}
-
-
-def hardest_classes(results: list[ModelResult]) -> pd.DataFrame:
-    """Mean per-class accuracy averaged across models, worst first."""
-    if not results:
-        return pd.DataFrame(columns=["true_char", "mean_accuracy"])
-    per = []
-    for res in results:
-        t = per_class_table(res.df)[["true_char", "accuracy"]]
-        per.append(t.set_index("true_char")["accuracy"])
-    combined = pd.concat(per, axis=1)
-    mean_acc = combined.mean(axis=1)
-    out = mean_acc.reset_index()
-    out.columns = ["true_char", "mean_accuracy"]
-    return out.sort_values("mean_accuracy").reset_index(drop=True)
-
-
-def compare_models(results: list[ModelResult]) -> dict:
-    """Bundle all cross-model comparison artifacts."""
-    return {
-        "comparison_table": comparison_table(results),
-        "outcome_matrix": outcome_matrix(results),
-        "pairwise_agreement": pairwise_agreement(results) if len(results) >= 2 else pd.DataFrame(),
-        "hardest_easiest": hardest_easiest(results),
-        "hardest_classes": hardest_classes(results),
-    }
+    return pd.DataFrame(rows, columns=cols)

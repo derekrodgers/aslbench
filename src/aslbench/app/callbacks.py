@@ -391,6 +391,23 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
         except Exception as exc:
             return html.Div(f"Could not render results: {exc}", className="text-danger")
 
+    # -- Confusion matrix normalize toggle ---------------------------------
+    @app.callback(
+        Output("confusion-graph", "figure"),
+        Input("confusion-normalize", "value"),
+        State("results-run-picker", "value"),
+        prevent_initial_call=True,
+    )
+    def _confusion(normalize, slug):
+        if not slug:
+            return no_update
+        results = runner.model_results_list(slug)
+        nonempty = [r for r in results if not r.df.empty]
+        if not nonempty:
+            return no_update
+        colors = figures.assign_colors([r.model_label for r in nonempty])
+        return figures.confusion_heatmaps(nonempty, colors, normalize=normalize)
+
     # -- Item explorer detail ----------------------------------------------
     @app.callback(
         Output("item-detail", "children"),
@@ -662,12 +679,7 @@ def _build_results_view(slug: str) -> html.Div:
     figs = [
         dcc.Graph(figure=figures.accuracy_bar(nonempty, colors)),
         dcc.Graph(figure=figures.per_class_accuracy_bars(nonempty, colors)),
-        dcc.Graph(figure=figures.confusion_heatmaps(nonempty, colors)),
-        dcc.Graph(figure=figures.per_participant_bars(nonempty, colors)),
     ]
-    pair_fig = figures.pairwise_agreement_fig(nonempty)
-    if pair_fig is not None:
-        figs.append(dcc.Graph(figure=pair_fig))
 
     # Lay out figures two-per-row.
     fig_rows = []
@@ -677,6 +689,58 @@ def _build_results_view(slug: str) -> html.Div:
         if len(cols) == 1:
             cols[0] = dbc.Col(pair[0], width=12)
         fig_rows.append(dbc.Row(cols, className="mb-2"))
+
+    # Per-class accuracy difference chart (only shown with 2+ models).
+    diff_fig = figures.per_class_diff_bars(nonempty, colors)
+    diff_block = (
+        [dcc.Graph(figure=diff_fig, className="mt-2")] if diff_fig is not None else []
+    )
+
+    # Confusion matrix with a raw/normalized toggle (re-rendered by callback).
+    confusion_block = html.Div(
+        [
+            html.H5("Confusion matrix", className="mt-3"),
+            dcc.RadioItems(
+                id="confusion-normalize",
+                options=[
+                    {"label": " Row-normalized (recall)", "value": "true"},
+                    {"label": " Raw counts", "value": "none"},
+                ],
+                value="true",
+                inline=True,
+                inputClassName="me-1",
+                labelClassName="me-3 small",
+            ),
+            dcc.Loading(
+                dcc.Graph(
+                    id="confusion-graph",
+                    figure=figures.confusion_heatmaps(nonempty, colors, normalize="true"),
+                )
+            ),
+        ]
+    )
+
+    # McNemar test: pairwise significance of accuracy differences on shared items.
+    mcnemar_block = []
+    if len(nonempty) >= 2:
+        mt = scoring.mcnemar_table(nonempty)
+        if not mt.empty:
+            mt_disp = mt.copy()
+            mt_disp["p_value"] = mt_disp["p_value"].apply(lambda v: f"{v:.4f}")
+            mcnemar_block = [
+                html.H5("Model comparison — McNemar test", className="mt-3"),
+                html.Small(
+                    "Exact two-sided McNemar test on discordant items "
+                    "(every model saw the identical images). p < 0.05 = a "
+                    "statistically significant accuracy difference.",
+                    className="text-muted",
+                ),
+                DataTable(
+                    data=mt_disp.to_dict("records"),
+                    columns=[{"name": c, "id": c} for c in mt_disp.columns],
+                    style_cell={"fontSize": 12, "textAlign": "left"},
+                ),
+            ]
 
     # Most-confused pairs, one small table per model.
     confused_blocks = [html.H5("Most-confused pairs", className="mt-3")]
@@ -729,6 +793,9 @@ def _build_results_view(slug: str) -> html.Div:
             html.H5("Comparison"),
             comp_table,
             *fig_rows,
+            *diff_block,
+            confusion_block,
+            *mcnemar_block,
             *confused_blocks,
             html.H5("Item explorer", className="mt-3"),
             html.Small("Click a row to see the image and each model's response."),

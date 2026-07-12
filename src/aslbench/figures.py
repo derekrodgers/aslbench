@@ -13,10 +13,13 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from . import scoring
-from .config import CLASSES
+from .config import CLASSES, N_CLASSES
 from .scoring import ModelResult
 
 _PALETTE = px.colors.qualitative.Safe
+
+# Uniform-random accuracy for the 36-way task, drawn as a reference line.
+_CHANCE = 1.0 / N_CLASSES
 
 
 def assign_colors(model_labels: list[str]) -> dict[str, str]:
@@ -25,7 +28,7 @@ def assign_colors(model_labels: list[str]) -> dict[str, str]:
 
 
 def accuracy_bar(results: list[ModelResult], colors: dict[str, str]) -> go.Figure:
-    """Grouped bars: overall accuracy and macro F1 per model, CI on accuracy."""
+    """Grouped bars: overall accuracy and macro F1 per model, with 95% CIs."""
     fig = go.Figure()
     categories = ["Accuracy", "Macro F1"]
     for res in results:
@@ -34,9 +37,10 @@ def accuracy_bar(results: list[ModelResult], colors: dict[str, str]) -> go.Figur
             continue
         acc = summ["accuracy"]
         macro_f1 = summ["macro_f1"]
-        ci = summ["accuracy_ci"]
-        err_plus = [ci[1] - acc, 0]
-        err_minus = [acc - ci[0], 0]
+        acc_ci = summ["accuracy_ci"]
+        f1_ci = summ["macro_f1_ci"]
+        err_plus = [acc_ci[1] - acc, f1_ci[1] - macro_f1]
+        err_minus = [acc - acc_ci[0], macro_f1 - f1_ci[0]]
         fig.add_bar(
             name=res.model_label,
             x=categories,
@@ -44,17 +48,24 @@ def accuracy_bar(results: list[ModelResult], colors: dict[str, str]) -> go.Figur
             marker_color=colors.get(res.model_label),
             error_y=dict(type="data", symmetric=False, array=err_plus, arrayminus=err_minus),
         )
+    fig.add_hline(
+        y=_CHANCE,
+        line_dash="dash",
+        line_color="grey",
+        annotation_text=f"chance (1/{N_CLASSES})",
+        annotation_position="top left",
+    )
     fig.update_layout(
         barmode="group",
         yaxis=dict(title="Score", range=[0, 1]),
-        title="Overall accuracy and macro F1 (95% bootstrap CI on accuracy)",
+        title="Overall accuracy and macro F1 (95% bootstrap CI)",
         legend_title="Model",
     )
     return fig
 
 
 def per_class_accuracy_bars(results: list[ModelResult], colors: dict[str, str]) -> go.Figure:
-    """Grouped bars of per-class accuracy, one bar per model, classes on x."""
+    """Grouped bars of per-class accuracy (=recall) with 95% Wilson CIs."""
     fig = go.Figure()
     order = [c for c in CLASSES]
     for res in results:
@@ -62,25 +73,49 @@ def per_class_accuracy_bars(results: list[ModelResult], colors: dict[str, str]) 
         if table.empty:
             continue
         acc_map = dict(zip(table["true_char"], table["accuracy"]))
+        lo_map = dict(zip(table["true_char"], table["recall_lo"]))
+        hi_map = dict(zip(table["true_char"], table["recall_hi"]))
         present = [c for c in order if c in acc_map]
+        y = [acc_map[c] for c in present]
+        err_plus = [hi_map[c] - acc_map[c] for c in present]
+        err_minus = [acc_map[c] - lo_map[c] for c in present]
         fig.add_bar(
             name=res.model_label,
             x=present,
-            y=[acc_map[c] for c in present],
+            y=y,
             marker_color=colors.get(res.model_label),
+            error_y=dict(type="data", symmetric=False, array=err_plus, arrayminus=err_minus),
         )
+    fig.add_hline(
+        y=_CHANCE,
+        line_dash="dash",
+        line_color="grey",
+        annotation_text=f"chance (1/{N_CLASSES})",
+        annotation_position="top left",
+    )
     fig.update_layout(
         barmode="group",
         xaxis=dict(title="Class", type="category"),
-        yaxis=dict(title="Accuracy", range=[0, 1]),
-        title="Per-class accuracy",
+        yaxis=dict(title="Accuracy (recall)", range=[0, 1]),
+        title="Per-class accuracy (95% Wilson CI)",
         legend_title="Model",
     )
     return fig
 
 
-def confusion_heatmaps(results: list[ModelResult], colors: dict[str, str]) -> go.Figure:
-    """Small-multiple confusion matrices (true on y, predicted on x)."""
+def confusion_heatmaps(
+    results: list[ModelResult],
+    colors: dict[str, str],
+    normalize: str = "true",
+) -> go.Figure:
+    """Small-multiple confusion matrices (true on y, predicted on x).
+
+    ``normalize="true"`` (default) row-normalizes each matrix so cell values are
+    per-true-class recall in [0, 1] — the standard, readable view for a 36-way
+    task and the fair way to compare models run on different sample sizes.
+    ``normalize="none"`` shows raw counts.
+    """
+    do_norm = normalize == "true"
     n = len(results)
     cols = min(n, 2)
     rows = int(np.ceil(n / cols)) if n else 1
@@ -106,6 +141,9 @@ def confusion_heatmaps(results: list[ModelResult], colors: dict[str, str]) -> go
             .reindex(index=true_classes, columns=pred_classes)
             .fillna(0)
         )
+        if do_norm:
+            row_sums = pivot.sum(axis=1).replace(0, np.nan)
+            pivot = pivot.div(row_sums, axis=0).fillna(0)
         fig.add_heatmap(
             z=pivot.values,
             x=list(pivot.columns),
@@ -116,54 +154,105 @@ def confusion_heatmaps(results: list[ModelResult], colors: dict[str, str]) -> go
         )
         fig.update_xaxes(title_text="Predicted", type="category", row=r, col=c)
         fig.update_yaxes(title_text="True", type="category", autorange="reversed", row=r, col=c)
+    coloraxis = dict(colorscale="Blues")
+    if do_norm:
+        coloraxis.update(cmin=0, cmax=1)
+    title = (
+        "Confusion matrix (row-normalized, recall)"
+        if do_norm
+        else "Confusion matrix (true vs predicted, raw counts)"
+    )
     fig.update_layout(
-        title="Confusion matrix (true vs predicted)",
-        coloraxis=dict(colorscale="Blues"),
+        title=title,
+        coloraxis=coloraxis,
         height=350 * rows + 80,
     )
     return fig
 
 
-def per_participant_bars(results: list[ModelResult], colors: dict[str, str]) -> go.Figure:
-    """Grouped bars of accuracy per participant, one bar per model."""
-    fig = go.Figure()
-    for res in results:
-        table = scoring.per_participant_table(res.df)
-        if table.empty:
-            continue
-        fig.add_bar(
-            name=res.model_label,
-            x=table["participant"],
-            y=table["accuracy"],
-            marker_color=colors.get(res.model_label),
-        )
-    fig.update_layout(
-        barmode="group",
-        xaxis=dict(title="Participant", type="category"),
-        yaxis=dict(title="Accuracy", range=[0, 1]),
-        title="Accuracy per participant",
-        legend_title="Model",
-    )
-    return fig
+def per_class_diff_bars(results: list[ModelResult], colors: dict[str, str]) -> go.Figure | None:
+    """Per-class accuracy difference bars for every model pair.
 
+    Only produced when 2+ models are present. For each pair (A, B) a bar chart
+    shows (accuracy_A − accuracy_B) per class, sorted from most-A-favoured on
+    the left to most-B-favoured on the right. Bars above zero use model A's
+    colour; bars below zero use model B's colour. The zero line is parity.
 
-def pairwise_agreement_fig(results: list[ModelResult]) -> go.Figure | None:
-    """Heatmap of the fraction of items where each pair were both correct."""
+    For more than one pair the chart uses small-multiple subplots, one per pair.
+    """
     if len(results) < 2:
         return None
+
     labels = [r.model_label for r in results]
-    correctness = {
-        r.model_label: r.df.set_index("item_id")["correct"].astype(bool) for r in results
-    }
-    z = np.zeros((len(labels), len(labels)))
-    for i, a in enumerate(labels):
-        for j, b in enumerate(labels):
-            ca, cb = correctness[a], correctness[b]
-            common = ca.index.intersection(cb.index)
-            if len(common) == 0:
-                z[i, j] = np.nan
-            else:
-                z[i, j] = float((ca.loc[common] & cb.loc[common]).mean())
-    fig = go.Figure(data=go.Heatmap(z=z, x=labels, y=labels, colorscale="Greens", zmin=0, zmax=1))
-    fig.update_layout(title="Pairwise both-correct fraction")
+    acc_by_model: dict[str, dict[str, float]] = {}
+    for res in results:
+        table = scoring.per_class_table(res.df)
+        acc_by_model[res.model_label] = dict(zip(table["true_char"], table["accuracy"]))
+
+    pairs = [
+        (labels[i], labels[j])
+        for i in range(len(labels))
+        for j in range(i + 1, len(labels))
+    ]
+    n_pairs = len(pairs)
+    n_cols = min(n_pairs, 2)
+    n_rows = int(np.ceil(n_pairs / n_cols))
+
+    subplot_titles = [f"{a} \u2212 {b}" for a, b in pairs]
+    fig = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=subplot_titles,
+        horizontal_spacing=0.08,
+        vertical_spacing=0.18,
+    )
+
+    for idx, (a, b) in enumerate(pairs):
+        row = idx // n_cols + 1
+        col = idx % n_cols + 1
+        acc_a = acc_by_model.get(a, {})
+        acc_b = acc_by_model.get(b, {})
+        classes = sorted(set(acc_a) & set(acc_b))
+        diffs = {c: acc_a[c] - acc_b[c] for c in classes}
+        sorted_classes = sorted(classes, key=lambda c: diffs[c], reverse=True)
+        y_vals = [diffs[c] for c in sorted_classes]
+        bar_colors = [colors.get(a) if d >= 0 else colors.get(b) for d in y_vals]
+        fig.add_bar(
+            x=sorted_classes,
+            y=y_vals,
+            marker_color=bar_colors,
+            showlegend=False,
+            row=row,
+            col=col,
+        )
+        fig.add_hline(y=0, line_color="black", line_width=0.8, row=row, col=col)
+        fig.update_xaxes(title_text="Class", type="category", tickangle=0, row=row, col=col)
+        fig.update_yaxes(
+            title_text="Accuracy difference", range=[-1, 1], row=row, col=col
+        )
+
+    # Annotation explaining the colour encoding, placed below the subtitle.
+    pair_annotations = []
+    for idx, (a, b) in enumerate(pairs):
+        row = idx // n_cols + 1
+        col = idx % n_cols + 1
+        pair_annotations.append(
+            dict(
+                text=f"<b style='color:{colors.get(a)}'>■</b> {a} better  "
+                     f"<b style='color:{colors.get(b)}'>■</b> {b} better",
+                showarrow=False,
+                xref=f"x{idx + 1 if idx > 0 else ''} domain",
+                yref=f"y{idx + 1 if idx > 0 else ''} domain",
+                x=0.5,
+                y=-0.22,
+                xanchor="center",
+                font=dict(size=10),
+            )
+        )
+
+    fig.update_layout(
+        title="Per-class accuracy difference (sorted by advantage)",
+        height=max(350 * n_rows + 80, 400),
+        annotations=list(fig.layout.annotations) + pair_annotations,
+    )
     return fig

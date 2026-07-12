@@ -8,6 +8,7 @@ dependencies:
   - plotly
   - pandas
   - numpy
+  - scikit-learn
   - pyarrow
   - pyyaml
   - pytest
