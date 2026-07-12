@@ -36,6 +36,9 @@ class OpenAICompatProvider:
         # trace into message.content and can easily exceed 2 000 tokens before
         # reaching the ANSWER line, so the default is intentionally high.
         self._max_tokens: int = int(cfg.extra.get("max_tokens", MAX_TOKENS_DEFAULT))
+        # Arbitrary extra fields merged into every chat-completions request body.
+        # Useful for server-specific knobs such as thinking budget (see providers.yaml).
+        self._extra_body: dict = cfg.extra.get("extra_body", {})
 
     def _get_client(self):
         if self._client is None:
@@ -77,6 +80,8 @@ class OpenAICompatProvider:
                 ],
                 max_tokens=max_tokens,
             )
+            if self._extra_body:
+                kwargs["extra_body"] = self._extra_body
             try:
                 resp = client.chat.completions.create(temperature=0, **kwargs)
             except Exception:

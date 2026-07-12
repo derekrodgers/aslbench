@@ -21,8 +21,29 @@ providers:
     label: "oMLX (local)"
     base_url: "http://127.0.0.1:8000/v1"
     api_key_env: null
+    extra:
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
     # extra.max_tokens overrides the default (16 384).  Thinking models stream
-    # their full reasoning trace into message.content and can need 10 000+
-    # tokens before writing the ANSWER line, so keep this generous.
-    # extra:
-    #   max_tokens: 32768
+    # their full reasoning trace into message.content and need generous headroom.
+    #
+    # extra.extra_body passes arbitrary fields into the chat-completions request
+    # body, which lets you control thinking behaviour without code changes.
+    #
+    # Disable thinking entirely (oMLX / vLLM with Qwen3):
+    #   extra:
+    #     extra_body:
+    #       chat_template_kwargs:
+    #         enable_thinking: false
+    #
+    # Cap thinking tokens (keeps reasoning but limits length):
+    #   extra:
+    #     max_tokens: 8192
+    #     extra_body:
+    #       thinking:
+    #         type: enabled
+    #         budget_tokens: 1024
+    #
+    # The exact key depends on the server.  Check oMLX / vLLM docs for your
+    # model.  If the server ignores unknown fields the run will still work.
