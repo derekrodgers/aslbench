@@ -31,10 +31,11 @@ def export_run(run_slug: str, fmt: Literal["pdf", "html"]) -> Path:
     out_name = f"{run_slug}.{ext}"
     dest = config.EXPORTS_DIR / out_name
 
-    # Run Quarto from EXPORTS_DIR so that any CSS/JS support files (report_files/)
-    # are written adjacent to the HTML output rather than being lost when the file
-    # is moved.  The --output flag is a bare filename so Quarto writes it into the
-    # working directory (EXPORTS_DIR).
+    # Run Quarto from the report/ directory (where the QMD lives) so that the
+    # CSS/JS support tree (report_files/) is written alongside the output file.
+    # embed-resources then resolves those paths correctly and inlines everything
+    # into the HTML.  Afterwards we move the result to exports/.
+    report_dir = config.REPORT_QMD.parent
     cmd = [
         "quarto",
         "render",
@@ -43,11 +44,13 @@ def export_run(run_slug: str, fmt: Literal["pdf", "html"]) -> Path:
         to,
         "-P",
         f"run_dir:{rdir.resolve()}",
+        "-P",
+        f"output_fmt:{to}",
         "--output",
         out_name,
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=config.EXPORTS_DIR)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=report_dir)
     except FileNotFoundError as exc:
         raise ExportError("quarto executable not found on PATH") from exc
     except subprocess.CalledProcessError as exc:
@@ -59,12 +62,16 @@ def export_run(run_slug: str, fmt: Literal["pdf", "html"]) -> Path:
             )
         raise ExportError(log.strip()) from exc
 
-    # Quarto writes to cwd (EXPORTS_DIR) with a bare --output filename; also check
-    # the QMD directory as a fallback for older Quarto behaviour.
-    if dest.exists():
-        return dest
-    fallback = config.REPORT_QMD.parent / out_name
-    if fallback.exists():
-        shutil.move(str(fallback), str(dest))
-        return dest
-    raise ExportError(f"Quarto reported success but {out_name} was not found")
+    # Move the rendered file from report/ to exports/.
+    tmp_out = report_dir / out_name
+    if tmp_out.exists():
+        shutil.move(str(tmp_out), str(dest))
+    elif not dest.exists():
+        raise ExportError(f"Quarto reported success but {out_name} was not found")
+
+    # Remove the support-files directory; embed-resources has inlined everything.
+    report_files = report_dir / "report_files"
+    if report_files.exists():
+        shutil.rmtree(report_files)
+
+    return dest

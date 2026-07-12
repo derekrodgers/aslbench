@@ -8,6 +8,7 @@ format:
     toc: true
 params:
   run_dir: ""
+  output_fmt: "html"
 jupyter: python3
 ---
 
@@ -15,6 +16,7 @@ jupyter: python3
 # | tags: [parameters]
 # | echo: false
 run_dir = ""
+output_fmt = "html"
 ```
 
 ```{python}
@@ -37,7 +39,7 @@ nonempty = [r for r in results if not r.df.empty]
 labels = [r.model_label for r in nonempty]
 colors = figures.assign_colors(labels)
 
-_OUTPUT_FMT = os.environ.get("QUARTO_OUTPUT_FORMAT", "html")
+_OUTPUT_FMT = output_fmt  # "html" for HTML output, "typst" for PDF
 
 
 def _show_fig(fig):
