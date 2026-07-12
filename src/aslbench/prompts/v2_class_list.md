@@ -12,7 +12,7 @@ Guidance:
 - Attend to the precise hand shape: which fingers are extended, curled, or
   tucked; the position of the thumb; and the orientation of the palm.
 - Several signs look similar and are easy to confuse, for example A, S, and T,
-  or M and N, or the digits versus their neighbouring letters. Look carefully
+  or M and N, V and 2, or the digits versus their neighbouring letters. Look carefully
   before committing.
 - Distinguish the letter "O" from the digit "0". The letter O is a single hand
   with the fingers and thumb curled into a rounded O shape. The digit 0 in this

@@ -1,5 +1,6 @@
 The image shows a single human hand (or two hands) making an American Sign
-Language fingerspelling sign. Identify which character the sign represents.
+Language (ASL) fingerspelling sign. Identify which character the sign
+represents.
 
 The answer is exactly one character: a digit from 0 to 9, or an uppercase
 letter from A to Z.

@@ -15,7 +15,7 @@ Work through these steps explicitly, writing your reasoning for each:
 2. Note whether one hand or two hands are involved.
 3. List the candidate characters whose canonical ASL handshape matches your
    description, then rule out the ones that do not fit.
-4. Watch the classic confusions: A vs S vs T, M vs N, and the letter "O" (one
+4. Watch out for the classic confusions: A vs S vs T, M vs N, V vs 2, and the letter "O" (one
    hand curled into a rounded O) vs the digit "0" (two hands forming a single
    closed ring).
 5. Commit to the single best character.
