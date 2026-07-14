@@ -5,8 +5,6 @@ Run with: python -m aslbench.app
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import dash
 import dash_bootstrap_components as dbc
 from flask import Response, abort

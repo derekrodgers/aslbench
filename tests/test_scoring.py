@@ -79,10 +79,7 @@ def test_per_class_table():
 
 def test_new_summary_metrics():
     summ = scoring.compute_summary(_fixture())
-    # Balanced accuracy is the macro-average of recall.
-    assert summ["balanced_accuracy"] == summ["macro_recall"]
     assert -1.0 <= summ["mcc"] <= 1.0
-    assert -1.0 <= summ["cohen_kappa"] <= 1.0
     for key in ("macro_f1_ci", "mcc_ci"):
         lo, hi = summ[key]
         assert lo <= hi

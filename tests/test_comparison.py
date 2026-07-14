@@ -36,7 +36,7 @@ def test_comparison_table_columns():
     # Random-chance baseline column is always present.
     assert any(c.startswith("Chance") for c in table.columns)
     metrics = list(table["metric"])
-    for m in ["accuracy", "balanced_accuracy", "macro_f1", "mcc", "cohen_kappa"]:
+    for m in ["accuracy", "macro_f1", "mcc"]:
         assert m in metrics
 
 
@@ -46,7 +46,6 @@ def test_comparison_table_chance_baseline():
     p = 1.0 / scoring.N_CLASSES
     assert table.loc["accuracy", chance_col] == p
     assert table.loc["mcc", chance_col] == 0.0
-    assert table.loc["cohen_kappa", chance_col] == 0.0
 
 
 def test_outcome_matrix():

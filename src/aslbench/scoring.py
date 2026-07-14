@@ -19,8 +19,6 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
-    balanced_accuracy_score,
-    cohen_kappa_score,
     f1_score,
     matthews_corrcoef,
     precision_recall_fscore_support,
@@ -186,17 +184,13 @@ def compute_summary(df: pd.DataFrame) -> dict:
         int(df["provider_error"].fillna("").astype(bool).sum()) if "provider_error" in df else 0
     )
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        macro_precision, macro_recall, macro_f1, _ = precision_recall_fscore_support(
-            y_true, y_pred, labels=classes, average="macro", zero_division=0
-        )
-        balanced_acc = float(balanced_accuracy_score(y_true, y_pred))
-        mcc = float(matthews_corrcoef(y_true, y_pred))
-        kappa = float(cohen_kappa_score(y_true, y_pred))
-
     def _macro_f1(yt, yp):
         return f1_score(yt, yp, labels=classes, average="macro", zero_division=0)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        macro_f1 = float(_macro_f1(y_true, y_pred))
+        mcc = float(matthews_corrcoef(y_true, y_pred))
 
     macro_f1_ci = _bootstrap_metric_ci(y_true, y_pred, _macro_f1)
     mcc_ci = _bootstrap_metric_ci(y_true, y_pred, matthews_corrcoef)
@@ -207,14 +201,10 @@ def compute_summary(df: pd.DataFrame) -> dict:
         "n_classes": int(df["true_char"].nunique()),
         "accuracy": acc,
         "accuracy_ci": [acc_lo, acc_hi],
-        "balanced_accuracy": balanced_acc,
-        "macro_precision": float(macro_precision),
-        "macro_recall": float(macro_recall),
-        "macro_f1": float(macro_f1),
+        "macro_f1": macro_f1,
         "macro_f1_ci": [macro_f1_ci[0], macro_f1_ci[1]],
         "mcc": mcc,
         "mcc_ci": [mcc_ci[0], mcc_ci[1]],
-        "cohen_kappa": kappa,
         "parse_failure_rate": parse_failures / n,
         "provider_error_rate": provider_errors / n,
     }
@@ -270,20 +260,16 @@ class ModelResult:
 
 _COMPARISON_METRICS = [
     "accuracy",
-    "balanced_accuracy",
     "macro_f1",
     "mcc",
-    "cohen_kappa",
-    "macro_precision",
-    "macro_recall",
     "parse_failure_rate",
     "provider_error_rate",
 ]
 
-# Expected metric values for a uniform-random classifier over N_CLASSES balanced
-# classes: accuracy, balanced accuracy, and (approx) macro P/R/F1 all equal 1/C,
-# while MCC and Cohen's kappa are 0 (no better than chance). Shown as a baseline
-# column so absolute scores are interpretable against random guessing.
+# Expected metric values for a uniform-random classifier over the 36 classes:
+# accuracy and macro F1 both equal 1/C, while MCC is 0 (no better than chance).
+# Shown as a baseline column so absolute scores are interpretable against random
+# guessing.
 _CHANCE_LABEL = f"Chance (1/{N_CLASSES})"
 
 
@@ -291,12 +277,8 @@ def _chance_baseline() -> dict:
     p = 1.0 / N_CLASSES
     return {
         "accuracy": p,
-        "balanced_accuracy": p,
         "macro_f1": p,
         "mcc": 0.0,
-        "cohen_kappa": 0.0,
-        "macro_precision": p,
-        "macro_recall": p,
         "parse_failure_rate": 0.0,
         "provider_error_rate": 0.0,
     }

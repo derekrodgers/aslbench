@@ -194,7 +194,6 @@ def cancel_run() -> bool:
     thread stops before starting its next item and its state becomes
     "cancelled".
     """
-    global _CANCEL_EVENT
     if _CANCEL_EVENT is not None and not _CANCEL_EVENT.is_set():
         _CANCEL_EVENT.set()
         return True

@@ -135,16 +135,14 @@ def per_class_accuracy_bars(results: list[ModelResult], colors: dict[str, str]) 
 def confusion_heatmaps(
     results: list[ModelResult],
     colors: dict[str, str],
-    normalize: str = "true",
 ) -> go.Figure:
     """Small-multiple confusion matrices (true on y, predicted on x).
 
-    ``normalize="true"`` (default) row-normalizes each matrix so cell values are
-    per-true-class recall in [0, 1] — the standard, readable view for a 36-way
-    task and the fair way to compare models run on different sample sizes.
-    ``normalize="none"`` shows raw counts.
+    Each matrix is row-normalized so cell values are per-true-class recall in
+    [0, 1] — the standard, readable view for a 36-way task. The diagonal is the
+    model's recall for each character; bright off-diagonal cells are systematic
+    confusions.
     """
-    do_norm = normalize == "true"
     n = len(results)
     cols = min(n, 2)
     rows = int(np.ceil(n / cols)) if n else 1
@@ -170,14 +168,9 @@ def confusion_heatmaps(
             .reindex(index=true_classes, columns=pred_classes)
             .fillna(0)
         )
-        if do_norm:
-            row_sums = pivot.sum(axis=1).replace(0, np.nan)
-            pivot = pivot.div(row_sums, axis=0).fillna(0)
-        hovertemplate = (
-            "True: %{y}<br>Predicted: %{x}<br>Recall: %{z:.3f}<extra></extra>"
-            if do_norm else
-            "True: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>"
-        )
+        row_sums = pivot.sum(axis=1).replace(0, np.nan)
+        pivot = pivot.div(row_sums, axis=0).fillna(0)
+        hovertemplate = "True: %{y}<br>Predicted: %{x}<br>Recall: %{z:.3f}<extra></extra>"
         fig.add_heatmap(
             z=pivot.values,
             x=list(pivot.columns),
@@ -189,14 +182,8 @@ def confusion_heatmaps(
         )
         fig.update_xaxes(title_text="Predicted", type="category", row=r, col=c)
         fig.update_yaxes(title_text="True", type="category", autorange="reversed", row=r, col=c)
-    coloraxis = dict(colorscale="Blues")
-    if do_norm:
-        coloraxis.update(cmin=0, cmax=1)
-    title = (
-        "Confusion matrix (row-normalized, recall)"
-        if do_norm
-        else "Confusion matrix (true vs predicted, raw counts)"
-    )
+    coloraxis = dict(colorscale="Blues", cmin=0, cmax=1)
+    title = "Confusion matrix (row-normalized, recall)"
     fig.update_layout(
         title=dict(text=title, pad=dict(t=15, b=15)),
         coloraxis=coloraxis,
