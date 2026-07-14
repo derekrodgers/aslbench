@@ -183,14 +183,15 @@ pytest
 
 The final assessment report is `final-report.qmd` in the repository root. It
 uses the archived `aslbench-20260713-203909` run for its results and detailed
-appendix. Activate the project environment, then render it with Quarto:
+appendix. Activate the project environment, then render HTML and PDF with their
+matching output-format parameter:
 
 ```bash
 conda activate aslbench
-quarto render final-report.qmd
+quarto render final-report.qmd --to html -P output_fmt:html
+quarto render final-report.qmd --to typst -P output_fmt:typst
 ```
 
-The QMD defines both HTML and Typst formats, so this creates
-`final-report.html` and `final-report.pdf` alongside the source file. HTML is
-self-contained. PDF rendering also requires the `kaleido` package included by
-the project report dependencies.
+These commands create `final-report.html` and `final-report.pdf` alongside the
+source file. HTML is self-contained. PDF rendering also requires the `kaleido`
+package included by the project report dependencies.

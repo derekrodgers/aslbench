@@ -27,7 +27,6 @@ output_fmt = "html"
 
 ```{python}
 import json
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -43,8 +42,7 @@ nonempty = [result for result in results if not result.df.empty]
 labels = [result.model_label for result in nonempty]
 colors = figures.assign_colors(labels)
 
-quarto_format = os.environ.get("QUARTO_PROJECT_OUTPUT_FORMAT", "").lower()
-_OUTPUT_FMT = "typst" if "typst" in quarto_format else output_fmt
+_OUTPUT_FMT = output_fmt  # "html" for HTML output, "typst" for PDF
 
 
 def _show_fig(fig):
