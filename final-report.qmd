@@ -176,9 +176,7 @@ The parser prefers the last valid `ANSWER: X` line and permits a bare single-cha
 
 The primary metric is accuracy:
 
-$$
-\operatorname{accuracy} = \frac{\operatorname{correct\ predictions}}{\operatorname{evaluated\ images}}
-$$
+> **Accuracy = correct predictions / evaluated images**
 
 Macro F1 gives each class equal weight, then combines class precision and recall. This matters even in a balanced run because a model may overpredict a few familiar labels. Accuracy and macro F1 receive deterministic 95% percentile bootstrap intervals from 1,000 item-level resamples.
 
