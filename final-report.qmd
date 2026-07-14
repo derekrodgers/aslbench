@@ -83,7 +83,7 @@ def _fmt_table(df: pd.DataFrame) -> pd.DataFrame:
 
 **aslbench** is a novel, interactive benchmark of fine-grained visual perception in frontier vision language models. It presents a model with a photograph from the ASL-HG dataset ([Pranto et al., 2026](https://data.mendeley.com/datasets/j4y5w2c8w9/1)) and asks it to identify one of 36 American Sign Language fingerspelling characters, digits 0 to 9 or letters A to Z. Predictions are parsed under a fixed response contract and scored by exact match against the dataset label. No human or model judge participates in scoring.
 
-The definitive evaluation tested four frontier models on the same balanced set of 360 images. Accuracy ranged from **31.7% to 56.1%**, compared with a **2.8% random-choice baseline**. The best model, `gpt-5.6-sol`, correctly classified 202 images. Every model was meaningfully above chance and meaningfully below perfect, so the benchmark is neither trivial nor saturated. Exact paired McNemar tests found every pairwise accuracy difference significant after Holm correction at the 0.05 level.
+The final evaluation tested four frontier models on the same balanced set of 360 images. Accuracy ranged from **31.7% to 56.1%**, compared with a **2.8% random-choice baseline**. The best model, `gpt-5.6-sol`, correctly classified 202 images. Every model was meaningfully above chance and meaningfully below perfect, so the benchmark is neither trivial nor saturated. Exact paired McNemar tests found every pairwise accuracy difference significant after Holm correction at the 0.05 level.
 
 The results show a substantial gap between broad visual competence and precise handshape recognition. Models handled distinctive static shapes such as `V`, `4`, and `5` well, but all four failed every sampled `J`, `M`, `N`, and `Z`. Some errors reveal visual limitations, such as repeated confusion among compact fist-like shapes. Others expose limits in the benchmark itself, particularly motion-defined letters and character pairs whose still-image handshapes overlap.
 
@@ -113,9 +113,9 @@ The novel question is: can an off-the-shelf frontier VLM, prompted through its n
 
 **Novel.** The benchmark targets a new model and dataset combination, with a purpose-built protocol for frontier VLMs. It does not call or repackage another benchmark. It tests fine-grained handshape perception directly.
 
-**Non-saturated.** The definitive scores span 31.7% to 56.1%. All models beat the 2.8% chance baseline by a wide margin, while the best model still misses 158 of 360 items. The task therefore has room both to distinguish current models and to measure future progress.
+**Non-saturated.** The final run scores span 31.7% to 56.1%. All models beat the 2.8% chance baseline by a wide margin, while the best model still misses 158 of 360 items. The task therefore has room both to distinguish current models and to measure future progress.
 
-**Reproducible.** The repository records the processed-dataset seed, definitive run seed, exact sampled item identifiers, prompt template, provider and model identifiers, package version, per-item responses, predictions, errors, and summaries. Every model in a run sees the identical images. The conda environment, provider configuration, tests, and Quarto export path are documented. A second evaluator can rebuild the dataset and obtain a comparable run, while the archived artifacts permit exact reanalysis of this run without making new API calls.
+**Reproducible.** The repository records the processed-dataset seed, final run seed, exact sampled item identifiers, prompt template, provider and model identifiers, package version, per-item responses, predictions, errors, and summaries. Every model in a run sees the identical images. The conda environment, provider configuration, tests, and Quarto export path are documented. A second evaluator can rebuild the dataset and obtain a comparable run, while the archived artifacts permit exact reanalysis of this run without making new API calls.
 
 **Quantitatively scored.** Exact-match accuracy is the primary metric. Macro F1, bootstrap confidence intervals, normalized confusion matrices, class-level results, and exact paired significance tests provide complementary quantitative views. Parse failures and provider failures are tracked separately, so operational errors cannot disappear into the model score.
 
@@ -123,9 +123,9 @@ The novel question is: can an off-the-shelf frontier VLM, prompted through its n
 
 # Dataset and examples
 
-ASL-HG contains 36 classes, 10 participants, and 1,000 source images per class. The photographs were captured by smartphone in natural indoor and outdoor settings. The repository's processed subset contains 3,600 images, with 10 seeded images retained per participant and class. The definitive run sampled 10 images per class from that processed set.
+ASL-HG contains 36 classes, 10 participants, and 1,000 source images per class. The photographs were captured by smartphone in natural indoor and outdoor settings. The repository's processed subset contains 3,600 images, with 10 seeded images retained per participant and class. The final run sampled 10 images per class from that processed set.
 
-The following examples were all included in the definitive run, and are broadly representative of the images the models are presented with.
+The following examples were all included in the final run, and are broadly representative of the images the models are presented with.
 
 ::: {layout-ncol=4}
 ![Digit 0. Two hands form a closed ring.](data/processed/0/P1_0_21.jpg){fig-alt="Two hands forming a closed ring for the ASL-HG digit zero"}
@@ -145,7 +145,7 @@ These particular examples expose real model differences. Three models recognized
 
 The script `scripts/subset_dataset.py` creates the processed set from the public raw ASL-HG download. It samples 10 images for every participant within every class using seed `20260711`, yielding 3,600 images with exact class and participant balance. The source folder is the authoritative class label.
 
-At run time, the human evaluator chooses 1 to 10 images per class. There is no default selection. The runner samples without replacement using a newly generated seed and archives the selected item identifiers. Every selected model receives the same ordered item set, which makes cross-model comparisons paired rather than independent. The definitive run used the maximum UI setting of 10 images per class, for 360 total evaluations per model.
+At run time, the human evaluator chooses 1 to 10 images per class. There is no default selection. The runner samples without replacement using a newly generated seed and archives the selected item identifiers. Every selected model receives the same ordered item set, which makes cross-model comparisons paired rather than independent. The final run used the maximum UI setting of 10 images per class, for 360 total evaluations per model.
 
 The filename encodes the answer, so leakage prevention is part of the benchmark design. OpenAI-compatible and Anthropic providers receive image bytes inline. The Copilot provider copies each image to a temporary neutral filename before attachment, disables tools, runs a single-item session, then destroys the session and temporary file. The model does not have access to any file names.
 
@@ -157,13 +157,13 @@ The project includes three prompt templates of escalating complexity:
 2. **`v2_class_list`** lists all 36 valid outputs, directs attention to finger, thumb, palm, and hand-count evidence, and explains the dataset's one-handed `O` versus two-handed `0` distinction.
 3. **`v3_reasoning`** adds a five-step visual analysis procedure.
 
-The definitive benchmark used **`v2_class_list`**. It is the best middle condition for a model comparison: more controlled than the minimal prompt, but less interventionist than mandatory step-by-step reasoning. The task is perception, so the final protocol supplies the label ontology and known dataset convention while leaving the model's internal decision process unconstrained. All templates require the final line `ANSWER: <single character>`.
+The final benchmark used **`v2_class_list`**. It is the best middle condition for a model comparison: more controlled than the minimal prompt, but less interventionist than mandatory step-by-step reasoning. The task is perception, so the final protocol supplies the label ontology and known dataset convention while leaving the model's internal decision process unconstrained. All templates require the final line `ANSWER: <single character>`.
 
 ## Model execution
 
 The provider abstraction supports GitHub Copilot, Anthropic, OpenAI-compatible cloud APIs, and local OpenAI-compatible servers such as LM Studio or oMLX. Each model executes in its own background thread, while items remain sequential within a model. Responses, optional thinking text, latency, token counts, parse status, and provider errors are written incrementally. Atomic state files support progress polling and post-interruption recovery.
 
-The definitive run compared the following models:
+The final run compared the following models:
 
 * `gpt-5.6-sol`
 * `gpt-5.6-terra`
@@ -179,7 +179,7 @@ The parser prefers the last valid `ANSWER: X` line and permits a bare single-cha
 The primary metric is accuracy:
 
 $$
-\mathrm{accuracy} = \frac{\text{correct predictions}}{\text{evaluated images}}.
+\operatorname{accuracy} = \frac{\operatorname{correct\ predictions}}{\operatorname{evaluated\ images}}
 $$
 
 Macro F1 gives each class equal weight, then combines class precision and recall. This matters even in a balanced run because a model may overpredict a few familiar labels. Accuracy and macro F1 receive deterministic 95% percentile bootstrap intervals from 1,000 item-level resamples.
@@ -200,7 +200,7 @@ Important deviations from the plan include a chance baseline, macro F1 confidenc
 
 The architecture retained the plan's most important boundaries. Benchmark logic lives in importable Python modules rather than callbacks or shell scripts. The app also calls the same dataset, runner, scoring, and figure functions used by tests and reports. Run folders are durable intermediates, and Quarto renders those artifacts into reports without rerunning the benchmark.
 
-# Definitive results
+# Final results
 
 ## Overall performance
 
@@ -265,7 +265,7 @@ ASL-HG contains 10 volunteers from one collection context in Dhaka, Bangladesh. 
 
 ## Prompt and model coverage
 
-The definitive run fixes one prompt, one provider path, and four models. That controls comparison, but it does not measure prompt sensitivity and excludes many frontier models. A fuller study would run all three prompts on a wider variety of models.
+The final run fixes one prompt, one provider path, and four models. That controls comparison, but it does not measure prompt sensitivity and excludes many frontier models. A fuller study would run all three prompts on a wider variety of models.
 
 ## Benchmark integrity
 
@@ -273,13 +273,13 @@ The dataset is recent (within six months), which substantially lowers but does n
 
 # Conclusion
 
-`aslbench` turns a recognizable VLM weakness into a reproducible, quantitative, and interactive evaluation. Its definitive run clearly differentiates four frontier models, with scores well above chance and well below perfect. While the results showed a clear stratification in overall performance by frontier models on the task, it also showed a strikingly consistent pattern of success and failure across specific handshapes.
+`aslbench` turns a recognizable VLM weakness into a reproducible, quantitative, and interactive evaluation. Its final run clearly differentiates four frontier models, with scores well above chance and well below perfect. While the results showed a clear stratification in overall performance by frontier models on the task, it also showed a strikingly consistent pattern of success and failure across specific handshapes.
 
 The benchmark also demonstrates the value of error analysis in benchmark design. Universal failures on movement-defined or visually overlapping labels are findings about both the models and the measurement instrument.
 
 \newpage
 
-# Appendix: Definitive Run Detail {#sec-definitive-run}
+# Appendix: Final Run Detail {#sec-final-run}
 
 This appendix is the detailed run report for `aslbench-20260713-203909`. It is generated from the archived configuration and per-item result files using the same scoring and figure functions as the interactive application.
 
