@@ -29,6 +29,11 @@ test = [
 ]
 report = [
     "kaleido",
+    "jupyter",
+    "ipykernel",
+    "nbformat",
+    "nbclient",
+    "tabulate",
 ]
 
 [tool.setuptools.packages.find]
