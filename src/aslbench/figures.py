@@ -30,7 +30,7 @@ _LEGEND = dict(
     xanchor="left",
     x=0,
 )
-_MARGIN_T = dict(t=80)
+_MARGIN_T = dict(t=80, b=30)
 
 
 def assign_colors(model_labels: list[str]) -> dict[str, str]:
@@ -139,7 +139,7 @@ def confusion_heatmaps(
         title=dict(text=title, pad=dict(t=15, b=15)),
         coloraxis=coloraxis,
         height=350 * rows + 120,
-        margin=dict(t=120),
+        margin=dict(t=80),
     )
     return fig
 
@@ -178,7 +178,7 @@ def per_class_diff_bars(results: list[ModelResult], colors: dict[str, str]) -> g
         cols=n_cols,
         subplot_titles=subplot_titles,
         horizontal_spacing=0.08,
-        vertical_spacing=0.25,
+        vertical_spacing=0.12,
     )
 
     for idx, (a, b) in enumerate(pairs):
@@ -218,10 +218,18 @@ def per_class_diff_bars(results: list[ModelResult], colors: dict[str, str]) -> g
             hoverinfo="skip",
         )
 
+    height = max(350 * n_rows + 80, 400)
+    # Grow the top margin with the number of models so the legend always fits
+    # between the figure title and the first subplot row.
+    margin_t = max(100, 45 + 20 * len(labels))
+    # Place the legend bottom a fixed 15 px above the plot-area top, expressed
+    # in paper coordinates (1.0 = top of plot area).
+    plot_h = height - margin_t - 80
+    legend_y = 1.0 + 15.0 / plot_h
     fig.update_layout(
         title=dict(text="Per-class accuracy difference (sorted by advantage)", pad=dict(t=15, b=15)),
-        height=max(350 * n_rows + 80, 400),
-        margin=dict(t=120),
-        legend={**_LEGEND, "y": 1.08},
+        height=height,
+        margin=dict(t=margin_t),
+        legend={**_LEGEND, "y": legend_y},
     )
     return fig
