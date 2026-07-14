@@ -178,3 +178,19 @@ pytest
   credit.
 - The class-encoding filename is never sent to the model, so the answer cannot
   leak through the attachment name.
+
+## Generating the final report
+
+The final assessment report is `final-report.qmd` in the repository root. It
+uses the archived `aslbench-20260713-203909` run for its results and detailed
+appendix. Activate the project environment, then render it with Quarto:
+
+```bash
+conda activate aslbench
+quarto render final-report.qmd
+```
+
+The QMD defines both HTML and Typst formats, so this creates
+`final-report.html` and `final-report.pdf` alongside the source file. HTML is
+self-contained. PDF rendering also requires the `kaleido` package included by
+the project report dependencies.
