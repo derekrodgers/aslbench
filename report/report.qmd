@@ -57,6 +57,18 @@ def _show_fig(fig):
         display(Image(img_bytes))
 
 
+def _show_table(df: pd.DataFrame) -> None:
+    """Render a DataFrame as HTML (interactive) or a Markdown table (PDF).
+
+    Markdown tables are rendered natively by Typst/Quarto and avoid the
+    mid-word hyphenation that HTML tables produce in the PDF output.
+    """
+    if _OUTPUT_FMT == "html":
+        display(HTML(df.to_html(index=False)))
+    else:
+        display(Markdown(df.to_markdown(index=False)))
+
+
 def _fmt_table(df: pd.DataFrame) -> pd.DataFrame:
     """Format float columns with 3 dp; booleans as yes/no; NaN as '--'."""
     out = df.copy()
@@ -137,7 +149,18 @@ if len(nonempty) >= 2:
     mt = scoring.mcnemar_table(nonempty)
     if not mt.empty:
         display(Markdown("### McNemar test"))
-        display(HTML(_fmt_table(mt).to_html(index=False)))
+        mt_disp = _fmt_table(mt).rename(columns={
+            "model_a": "Model A",
+            "model_b": "Model B",
+            "better": "Better",
+            "only_a_correct": "A only",
+            "only_b_correct": "B only",
+            "n_discordant": "Discordant",
+            "p_value": "p",
+            "p_holm": "p (Holm)",
+            "significant": "Sig.",
+        })
+        _show_table(mt_disp)
         display(Markdown(content.MCNEMAR_NOTE))
 ```
 

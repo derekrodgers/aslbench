@@ -12,6 +12,7 @@ dependencies:
   - pyarrow
   - pyyaml
   - pytest
+  - tabulate
   - jupyter
   - nbformat
   - nbclient
