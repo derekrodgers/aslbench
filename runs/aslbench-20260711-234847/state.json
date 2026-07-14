@@ -1,8 +1,0 @@
-{
-  "status": "cancelled",
-  "started_at": "2026-07-11T23:48:47",
-  "finished_at": "2026-07-11T23:56:05",
-  "models": {
-    "omlx-qwen3-6-35b-a3b-ud-mlx-4bit": "cancelled"
-  }
-}

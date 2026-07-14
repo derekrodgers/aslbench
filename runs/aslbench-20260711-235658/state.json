@@ -1,8 +1,0 @@
-{
-  "status": "cancelled",
-  "started_at": "2026-07-11T23:56:58",
-  "finished_at": "2026-07-11T23:57:52",
-  "models": {
-    "copilot-claude-haiku-4-5": "cancelled"
-  }
-}

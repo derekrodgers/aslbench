@@ -1,9 +1,0 @@
-{
-  "status": "done",
-  "started_at": "2026-07-12T01:22:27",
-  "finished_at": "2026-07-12T01:45:59",
-  "models": {
-    "copilot-claude-opus-4-8": "done",
-    "copilot-gpt-5-6-terra": "done"
-  }
-}
