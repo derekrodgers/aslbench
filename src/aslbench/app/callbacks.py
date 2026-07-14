@@ -439,11 +439,12 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
         Output("item-detail", "children"),
         Output("item-table", "style_data_conditional"),
         Input("item-table", "active_cell"),
-        State("item-table", "data"),
+        State("item-table", "derived_viewport_data"),
         State("results-run-picker", "value"),
         prevent_initial_call=True,
     )
-    def _item_detail(active_cell, data, slug):
+    def _item_detail(active_cell, viewport_data, slug):
+        data = viewport_data or []
         _all_cols = list(data[0].keys()) if data else []
         _labels = [c for c in _all_cols if c not in ("item_id", "true_char")]
         row_styles = _item_table_base_styles(_labels)
