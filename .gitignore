@@ -23,6 +23,3 @@ exports/
 report/*_files/
 report/.quarto/
 .quarto/
-
-# Individual runs
-runs/
