@@ -4,6 +4,7 @@ format:
   html:
     embed-resources: true
     toc: true
+    format-links: false
   typst:
     toc: true
 params:
@@ -147,29 +148,27 @@ if len(nonempty) >= 2:
 for res in nonempty:
     display(Markdown(f"### {res.model_label}"))
 
-    mc = scoring.most_confused(res.df, top_n=10)
-    wrong = res.df[(res.df["parse_ok"]) & (~res.df["correct"])].head(12)
+    mc = scoring.most_confused(res.df, top_n=8)
+    wrong = res.df[(res.df["parse_ok"]) & (~res.df["correct"])].head(8)
     wrong_cols = wrong[["item_id", "true_char", "predicted_char"]].reset_index(drop=True)
 
-    if _OUTPUT_FMT == "html":
-        mc_html = mc.to_html(index=False) if not mc.empty else ""
-        wrong_html = wrong_cols.to_html(index=False) if not wrong.empty else ""
-        parts = []
-        if mc_html:
-            parts.append(f'<div><p><strong>Most-confused pairs</strong></p>{mc_html}</div>')
-        if wrong_html:
-            parts.append(f'<div><p><strong>Sample misclassifications</strong></p>{wrong_html}</div>')
-        if parts:
-            display(HTML(
-                '<div style="display:flex;gap:2rem;align-items:flex-start;">'
-                + "".join(parts)
-                + "</div>"
-            ))
-    else:
-        if not mc.empty:
-            display(Markdown("**Most-confused pairs**"))
-            display(mc)
-        if not wrong.empty:
-            display(Markdown("**Sample misclassifications**"))
-            display(wrong_cols)
+    cells = []
+    if not mc.empty:
+        cells.append(
+            f'<td valign="top" style="padding-right:2rem">'
+            f'<strong>Most-confused pairs</strong><br>'
+            f'{mc.to_html(index=False)}</td>'
+        )
+    if not wrong.empty:
+        cells.append(
+            f'<td valign="top">'
+            f'<strong>Sample misclassifications</strong><br>'
+            f'{wrong_cols.to_html(index=False)}</td>'
+        )
+    if cells:
+        display(HTML(
+            f'<table style="border:none">'
+            f'<tr style="border:none">{" ".join(cells)}</tr>'
+            f'</table>'
+        ))
 ```

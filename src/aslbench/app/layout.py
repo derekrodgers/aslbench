@@ -124,7 +124,11 @@ def build_results_tab() -> html.Div:
             html.H4("Results", className="mt-3"),
             html.Label("Run"),
             dcc.Dropdown(id="results-run-picker", options=[], value=None),
-            dcc.Loading(html.Div(id="results-body")),
+            dcc.Loading(
+                html.Div(id="results-body", style={"minHeight": "200px"}),
+                className="mt-3",
+            ),
+            dcc.Store(id="_scroll-sink"),
         ]
     )
 

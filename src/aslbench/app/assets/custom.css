@@ -1,10 +1,15 @@
 /*
- * Suppress the default focused-cell highlight on every DataTable in the app.
+ * Suppress the default focused-cell highlight on every DataTable.
  * Row-level highlighting in the item explorer is handled exclusively via
  * style_data_conditional updated by the active_cell callback.
+ *
+ * We match the internal Dash specificity chain to guarantee the override.
  */
+.dash-spreadsheet-container .dash-spreadsheet-inner td.focused,
+.dash-spreadsheet-container .dash-spreadsheet-inner .dash-cell.focused,
 td.focused,
 .dash-cell.focused {
+    -webkit-box-shadow: none !important;
     box-shadow: none !important;
     outline: none !important;
     background-color: inherit !important;

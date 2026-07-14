@@ -26,11 +26,11 @@ _LEGEND = dict(
     title=dict(text="Model", side="left"),
     orientation="h",
     yanchor="bottom",
-    y=1.05,
+    y=1.0,
     xanchor="left",
     x=0,
 )
-_MARGIN_T = dict(t=120)
+_MARGIN_T = dict(t=80)
 
 
 def assign_colors(model_labels: list[str]) -> dict[str, str]:
@@ -283,7 +283,7 @@ def per_class_diff_bars(results: list[ModelResult], colors: dict[str, str]) -> g
     fig.update_layout(
         title=dict(text="Per-class accuracy difference (sorted by advantage)", pad=dict(t=15, b=15)),
         height=max(350 * n_rows + 80, 400),
-        margin=_MARGIN_T,
-        legend=_LEGEND,
+        margin=dict(t=120),
+        legend={**_LEGEND, "y": 1.08},
     )
     return fig

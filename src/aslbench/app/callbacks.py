@@ -91,7 +91,37 @@ def _item_table_base_styles(labels: list[str]) -> list[dict]:
     )
 
 
+# Applied to every DataTable to suppress the default focused-cell ring.
+_NO_CELL_FOCUS = [{
+    "selector": "td.focused",
+    "rule": (
+        "-webkit-box-shadow: none !important;"
+        " box-shadow: none !important;"
+        " outline: none !important;"
+        " background-color: inherit !important;"
+    ),
+}]
+
+
 def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registration block
+    # -- Auto-scroll to item detail when a row is clicked ------------------
+    app.clientside_callback(
+        """
+        function(children) {
+            if (children) {
+                window.setTimeout(function() {
+                    var el = document.getElementById('item-detail');
+                    if (el) { el.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+                }, 150);
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("_scroll-sink", "data"),
+        Input("item-detail", "children"),
+        prevent_initial_call=True,
+    )
+
     # -- Subset summary + gating of downstream controls --------------------
     @app.callback(
         Output("total-images", "children"),
@@ -432,17 +462,21 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
         prevent_initial_call=True,
     )
     def _item_detail(active_cell, data, slug):
-        _labels = [
-            c for c in (list(data[0].keys()) if data else [])
-            if c not in ("item_id", "true_char")
-        ]
+        _all_cols = list(data[0].keys()) if data else []
+        _labels = [c for c in _all_cols if c not in ("item_id", "true_char")]
         row_styles = _item_table_base_styles(_labels)
         if active_cell:
-            row_styles = row_styles + [{
-                "if": {"row_index": active_cell["row"]},
-                "borderTop": "2px solid #0d6efd",
-                "borderBottom": "2px solid #0d6efd",
-            }]
+            r = active_cell["row"]
+            row_styles = row_styles + [
+                {"if": {"row_index": r},
+                 "borderTop": "2px solid #0d6efd",
+                 "borderBottom": "2px solid #0d6efd"},
+            ]
+            if _all_cols:
+                row_styles.append({"if": {"row_index": r, "column_id": _all_cols[0]},
+                                   "borderLeft": "2px solid #0d6efd"})
+                row_styles.append({"if": {"row_index": r, "column_id": _all_cols[-1]},
+                                   "borderRight": "2px solid #0d6efd"})
         if not active_cell or not slug:
             return "", row_styles
         row = data[active_cell["row"]]
@@ -706,6 +740,7 @@ def _build_results_view(slug: str) -> html.Div:
         data=comp_disp.to_dict("records"),
         columns=[{"name": c, "id": c} for c in comp_disp.columns],
         style_cell={"fontSize": 12, "textAlign": "left"},
+        css=_NO_CELL_FOCUS,
     )
 
     figs = [
@@ -773,6 +808,7 @@ def _build_results_view(slug: str) -> html.Div:
                     data=mt_disp.to_dict("records"),
                     columns=[{"name": c, "id": c} for c in mt_disp.columns],
                     style_cell={"fontSize": 12, "textAlign": "left"},
+                    css=_NO_CELL_FOCUS,
                 ),
             ]
 
@@ -791,6 +827,7 @@ def _build_results_view(slug: str) -> html.Div:
                     columns=[{"name": c, "id": c} for c in ["true", "predicted", "count"]],
                     style_cell={"fontSize": 12, "textAlign": "left"},
                     page_size=8,
+                    css=_NO_CELL_FOCUS,
                 ),
             ]
         ))
@@ -814,6 +851,7 @@ def _build_results_view(slug: str) -> html.Div:
         columns=[{"name": c, "id": c} for c in explorer_cols if c in matrix.columns],
         style_cell={"fontSize": 12, "textAlign": "left"},
         page_size=15,
+        css=_NO_CELL_FOCUS,
         style_data_conditional=_item_table_base_styles(labels),
     )
 
