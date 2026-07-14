@@ -49,7 +49,11 @@ def _show_fig(fig):
         fig.show()
     else:
         import plotly.io as pio
-        img_bytes = pio.to_image(fig, format="png", width=900, height=500)
+        # Use the figure's own declared height so multi-row subplots are not
+        # squashed (e.g. confusion matrix rows whose x-axis labels would
+        # otherwise overlap the subplot title of the next row).
+        fig_height = fig.layout.height or 500
+        img_bytes = pio.to_image(fig, format="png", width=900, height=fig_height)
         display(Image(img_bytes))
 
 
@@ -75,11 +79,6 @@ lines = [
     f"- **Total images:** {config_data['n_items']}",
     f"- **Sample seed:** {config_data['sample_seed']}",
     f"- **Prompt template:** {config_data['template_id']}",
-    "- **Models benchmarked:** "
-    + ", ".join(
-        f"{m['model_label']} [{m['provider_label']}]"
-        for m in config_data["models"]
-    ),
     f"- **Note:** {config_data.get('run_note') or '(none)'}",
 ]
 Markdown("\n".join(lines))

@@ -225,7 +225,7 @@ def per_class_diff_bars(results: list[ModelResult], colors: dict[str, str]) -> g
     # Place the legend bottom a fixed 15 px above the plot-area top, expressed
     # in paper coordinates (1.0 = top of plot area).
     plot_h = height - margin_t - 80
-    legend_y = 1.0 + 15.0 / plot_h
+    legend_y = 1.0 + 30.0 / plot_h
     fig.update_layout(
         title=dict(text="Per-class accuracy difference (sorted by advantage)", pad=dict(t=15, b=15)),
         height=height,

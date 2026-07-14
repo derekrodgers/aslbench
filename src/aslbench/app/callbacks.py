@@ -701,13 +701,6 @@ def _build_results_view(slug: str) -> html.Div:
                         html.Li([html.B("Total images: "), cfg['n_items']]),
                         html.Li([html.B("Sample seed: "), cfg['sample_seed']]),
                         html.Li([html.B("Prompt template: "), cfg['template_id']]),
-                        html.Li([
-                            html.B("Models benchmarked: "),
-                            ", ".join(
-                                f"{m['model_label']} [{m['provider_label']}]"
-                                for m in cfg['models']
-                            ),
-                        ]),
                         html.Li([html.B("Note: "), cfg.get('run_note') or '(none)']),
                     ],
                     className="mb-0",
