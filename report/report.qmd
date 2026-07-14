@@ -26,7 +26,7 @@ import os
 from pathlib import Path
 
 import pandas as pd
-from IPython.display import Image, Markdown, display
+from IPython.display import HTML, Image, Markdown, display
 
 from aslbench import config, figures, runner, scoring
 
@@ -83,7 +83,7 @@ model_rows = [
     {"Provider": m["provider_label"], "Model": m["model_label"], "Slug": m["model_slug"]}
     for m in config_data["models"]
 ]
-pd.DataFrame(model_rows)
+display(HTML(pd.DataFrame(model_rows).to_html(index=False)))
 ```
 
 The task is 36-way single-character classification (ASL fingerspelling digits
@@ -96,7 +96,7 @@ which encode the true class, are never shown to the models.
 ```{python}
 # | echo: false
 if nonempty:
-    display(scoring.comparison_table(nonempty))
+    display(HTML(_fmt_table(scoring.comparison_table(nonempty)).to_html(index=False)))
 else:
     display(Markdown("No results recorded."))
 ```
@@ -109,15 +109,15 @@ if nonempty:
 
 ```{python}
 # | echo: false
-if nonempty:
-    _show_fig(figures.per_class_accuracy_bars(nonempty, colors))
+diff_fig = figures.per_class_diff_bars(nonempty, colors) if len(nonempty) >= 2 else None
+if diff_fig is not None:
+    _show_fig(diff_fig)
 ```
 
 ```{python}
 # | echo: false
-diff_fig = figures.per_class_diff_bars(nonempty, colors) if len(nonempty) >= 2 else None
-if diff_fig is not None:
-    _show_fig(diff_fig)
+if nonempty:
+    _show_fig(figures.per_class_accuracy_bars(nonempty, colors))
 ```
 
 ```{python}
@@ -131,12 +131,13 @@ if nonempty:
 if len(nonempty) >= 2:
     mt = scoring.mcnemar_table(nonempty)
     if not mt.empty:
+        display(Markdown("### McNemar test"))
         display(Markdown(
-            "**McNemar test** (exact two-sided, on discordant items; every model "
-            "saw the identical images). p < 0.05 = a statistically significant "
+            "Exact two-sided McNemar test on discordant items. Every model "
+            "saw the identical images. p < 0.05 = a statistically significant "
             "accuracy difference."
         ))
-        display(_fmt_table(mt))
+        display(HTML(_fmt_table(mt).to_html(index=False)))
 ```
 
 ## Per-model detail
@@ -146,22 +147,29 @@ if len(nonempty) >= 2:
 for res in nonempty:
     display(Markdown(f"### {res.model_label}"))
 
-    summ = scoring.compute_summary(res.df)
-    display(Markdown(
-        f"Accuracy {summ['accuracy']:.3f}, macro F1 {summ['macro_f1']:.3f}, "
-        f"parse-failure rate {summ['parse_failure_rate']:.3f}."
-    ))
-
-    display(Markdown("**Per-class metrics**"))
-    display(_fmt_table(scoring.per_class_table(res.df)))
-
-    display(Markdown("**Most-confused pairs**"))
-    display(scoring.most_confused(res.df, top_n=10))
-
-    # A sample of misclassified items (images are viewable in the dashboard's
-    # item explorer; a static table keeps the report identical in HTML and PDF).
+    mc = scoring.most_confused(res.df, top_n=10)
     wrong = res.df[(res.df["parse_ok"]) & (~res.df["correct"])].head(12)
-    if not wrong.empty:
-        display(Markdown("**Sample misclassifications**"))
-        display(wrong[["item_id", "true_char", "predicted_char"]].reset_index(drop=True))
+    wrong_cols = wrong[["item_id", "true_char", "predicted_char"]].reset_index(drop=True)
+
+    if _OUTPUT_FMT == "html":
+        mc_html = mc.to_html(index=False) if not mc.empty else ""
+        wrong_html = wrong_cols.to_html(index=False) if not wrong.empty else ""
+        parts = []
+        if mc_html:
+            parts.append(f'<div><p><strong>Most-confused pairs</strong></p>{mc_html}</div>')
+        if wrong_html:
+            parts.append(f'<div><p><strong>Sample misclassifications</strong></p>{wrong_html}</div>')
+        if parts:
+            display(HTML(
+                '<div style="display:flex;gap:2rem;align-items:flex-start;">'
+                + "".join(parts)
+                + "</div>"
+            ))
+    else:
+        if not mc.empty:
+            display(Markdown("**Most-confused pairs**"))
+            display(mc)
+        if not wrong.empty:
+            display(Markdown("**Sample misclassifications**"))
+            display(wrong_cols)
 ```

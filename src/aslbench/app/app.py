@@ -23,7 +23,7 @@ def create_app() -> dash.Dash:
 
     app = dash.Dash(
         __name__,
-        external_stylesheets=[dbc.themes.BOOTSTRAP],
+        external_stylesheets=[dbc.themes.LUMEN],
         suppress_callback_exceptions=True,
         title="aslbench",
     )

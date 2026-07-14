@@ -1,0 +1,11 @@
+/*
+ * Suppress the default focused-cell highlight on every DataTable in the app.
+ * Row-level highlighting in the item explorer is handled exclusively via
+ * style_data_conditional updated by the active_cell callback.
+ */
+td.focused,
+.dash-cell.focused {
+    box-shadow: none !important;
+    outline: none !important;
+    background-color: inherit !important;
+}

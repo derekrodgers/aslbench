@@ -21,6 +21,17 @@ _PALETTE = px.colors.qualitative.Safe
 # Uniform-random accuracy for the 36-way task, drawn as a reference line.
 _CHANCE = 1.0 / N_CLASSES
 
+# Shared legend style applied to every categorically-coloured figure.
+_LEGEND = dict(
+    title=dict(text="Model", side="left"),
+    orientation="h",
+    yanchor="bottom",
+    y=1.05,
+    xanchor="left",
+    x=0,
+)
+_MARGIN_T = dict(t=120)
+
 
 def assign_colors(model_labels: list[str]) -> dict[str, str]:
     """Assign a stable color to each model label."""
@@ -47,6 +58,13 @@ def accuracy_bar(results: list[ModelResult], colors: dict[str, str]) -> go.Figur
             y=[acc, macro_f1],
             marker_color=colors.get(res.model_label),
             error_y=dict(type="data", symmetric=False, array=err_plus, arrayminus=err_minus),
+            customdata=[[acc_ci[0], acc_ci[1]], [f1_ci[0], f1_ci[1]]],
+            hovertemplate=(
+                "<b>%{fullData.name}</b><br>"
+                "%{x}: %{y:.3f}<br>"
+                "95% CI: [%{customdata[0]:.3f}, %{customdata[1]:.3f}]"
+                "<extra></extra>"
+            ),
         )
     fig.add_hline(
         y=_CHANCE,
@@ -58,8 +76,9 @@ def accuracy_bar(results: list[ModelResult], colors: dict[str, str]) -> go.Figur
     fig.update_layout(
         barmode="group",
         yaxis=dict(title="Score", range=[0, 1]),
-        title="Overall accuracy and macro F1 (95% bootstrap CI)",
-        legend_title="Model",
+        title=dict(text="Overall accuracy and macro F1 (95% bootstrap CI)", pad=dict(t=15, b=15)),
+        legend=_LEGEND,
+        margin=_MARGIN_T,
     )
     return fig
 
@@ -79,12 +98,21 @@ def per_class_accuracy_bars(results: list[ModelResult], colors: dict[str, str]) 
         y = [acc_map[c] for c in present]
         err_plus = [hi_map[c] - acc_map[c] for c in present]
         err_minus = [acc_map[c] - lo_map[c] for c in present]
+        customdata=[[lo_map[c], hi_map[c]] for c in present]
         fig.add_bar(
             name=res.model_label,
             x=present,
             y=y,
             marker_color=colors.get(res.model_label),
             error_y=dict(type="data", symmetric=False, array=err_plus, arrayminus=err_minus),
+            customdata=customdata,
+            hovertemplate=(
+                "<b>%{fullData.name}</b><br>"
+                "Class: %{x}<br>"
+                "Accuracy: %{y:.3f}<br>"
+                "95% CI: [%{customdata[0]:.3f}, %{customdata[1]:.3f}]"
+                "<extra></extra>"
+            ),
         )
     fig.add_hline(
         y=_CHANCE,
@@ -97,8 +125,9 @@ def per_class_accuracy_bars(results: list[ModelResult], colors: dict[str, str]) 
         barmode="group",
         xaxis=dict(title="Class", type="category"),
         yaxis=dict(title="Accuracy (recall)", range=[0, 1]),
-        title="Per-class accuracy (95% Wilson CI)",
-        legend_title="Model",
+        title=dict(text="Per-class accuracy (95% Wilson CI)", pad=dict(t=15, b=15)),
+        legend=_LEGEND,
+        margin=_MARGIN_T,
     )
     return fig
 
@@ -144,11 +173,17 @@ def confusion_heatmaps(
         if do_norm:
             row_sums = pivot.sum(axis=1).replace(0, np.nan)
             pivot = pivot.div(row_sums, axis=0).fillna(0)
+        hovertemplate = (
+            "True: %{y}<br>Predicted: %{x}<br>Recall: %{z:.3f}<extra></extra>"
+            if do_norm else
+            "True: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>"
+        )
         fig.add_heatmap(
             z=pivot.values,
             x=list(pivot.columns),
             y=list(pivot.index),
             coloraxis="coloraxis",
+            hovertemplate=hovertemplate,
             row=r,
             col=c,
         )
@@ -163,9 +198,10 @@ def confusion_heatmaps(
         else "Confusion matrix (true vs predicted, raw counts)"
     )
     fig.update_layout(
-        title=title,
+        title=dict(text=title, pad=dict(t=15, b=15)),
         coloraxis=coloraxis,
-        height=350 * rows + 80,
+        height=350 * rows + 120,
+        margin=dict(t=120),
     )
     return fig
 
@@ -204,7 +240,7 @@ def per_class_diff_bars(results: list[ModelResult], colors: dict[str, str]) -> g
         cols=n_cols,
         subplot_titles=subplot_titles,
         horizontal_spacing=0.08,
-        vertical_spacing=0.18,
+        vertical_spacing=0.25,
     )
 
     for idx, (a, b) in enumerate(pairs):
@@ -222,6 +258,7 @@ def per_class_diff_bars(results: list[ModelResult], colors: dict[str, str]) -> g
             y=y_vals,
             marker_color=bar_colors,
             showlegend=False,
+            hovertemplate="Class: %{x}<br>Difference: %{y:.3f}<extra></extra>",
             row=row,
             col=col,
         )
@@ -231,28 +268,22 @@ def per_class_diff_bars(results: list[ModelResult], colors: dict[str, str]) -> g
             title_text="Accuracy difference", range=[-1, 1], row=row, col=col
         )
 
-    # Annotation explaining the colour encoding, placed below the subtitle.
-    pair_annotations = []
-    for idx, (a, b) in enumerate(pairs):
-        row = idx // n_cols + 1
-        col = idx % n_cols + 1
-        pair_annotations.append(
-            dict(
-                text=f"<b style='color:{colors.get(a)}'>■</b> {a} better  "
-                     f"<b style='color:{colors.get(b)}'>■</b> {b} better",
-                showarrow=False,
-                xref=f"x{idx + 1 if idx > 0 else ''} domain",
-                yref=f"y{idx + 1 if idx > 0 else ''} domain",
-                x=0.5,
-                y=-0.22,
-                xanchor="center",
-                font=dict(size=10),
-            )
+    # Invisible scatter traces used only to populate the legend (one entry per model).
+    for label in labels:
+        fig.add_scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker=dict(size=12, color=colors.get(label), symbol="square"),
+            name=f"{label} better",
+            showlegend=True,
+            hoverinfo="skip",
         )
 
     fig.update_layout(
-        title="Per-class accuracy difference (sorted by advantage)",
+        title=dict(text="Per-class accuracy difference (sorted by advantage)", pad=dict(t=15, b=15)),
         height=max(350 * n_rows + 80, 400),
-        annotations=list(fig.layout.annotations) + pair_annotations,
+        margin=_MARGIN_T,
+        legend=_LEGEND,
     )
     return fig

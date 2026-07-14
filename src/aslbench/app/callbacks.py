@@ -77,6 +77,20 @@ def _n_classes() -> int:
         return 36
 
 
+def _item_table_base_styles(labels: list[str]) -> list[dict]:
+    """Conditional styles for the item-explorer DataTable (colour by outcome)."""
+    return (
+        [{"if": {"filter_query": f'{{{lab}}} = "correct"', "column_id": lab},
+          "backgroundColor": "#d4edda"} for lab in labels]
+        + [{"if": {"filter_query": f'{{{lab}}} = "incorrect"', "column_id": lab},
+            "backgroundColor": "#f8d7da"} for lab in labels]
+        + [{"if": {"filter_query": f'{{{lab}}} = "parse-failure"', "column_id": lab},
+            "backgroundColor": "#e2e3e5", "color": "#6c757d"} for lab in labels]
+        + [{"if": {"filter_query": f'{{{lab}}} = "error"', "column_id": lab},
+            "backgroundColor": "#fff3cd", "color": "#856404"} for lab in labels]
+    )
+
+
 def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registration block
     # -- Subset summary + gating of downstream controls --------------------
     @app.callback(
@@ -411,14 +425,26 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
     # -- Item explorer detail ----------------------------------------------
     @app.callback(
         Output("item-detail", "children"),
+        Output("item-table", "style_data_conditional"),
         Input("item-table", "active_cell"),
         State("item-table", "data"),
         State("results-run-picker", "value"),
         prevent_initial_call=True,
     )
     def _item_detail(active_cell, data, slug):
+        _labels = [
+            c for c in (list(data[0].keys()) if data else [])
+            if c not in ("item_id", "true_char")
+        ]
+        row_styles = _item_table_base_styles(_labels)
+        if active_cell:
+            row_styles = row_styles + [{
+                "if": {"row_index": active_cell["row"]},
+                "borderTop": "2px solid #0d6efd",
+                "borderBottom": "2px solid #0d6efd",
+            }]
         if not active_cell or not slug:
-            return ""
+            return "", row_styles
         row = data[active_cell["row"]]
         item_id = row["item_id"]
         cfg = runner.load_run_config(slug)
@@ -512,7 +538,7 @@ def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registra
                     width=7,
                 ),
             ]
-        )
+        ), row_styles
 
     # -- History ------------------------------------------------------------
     def _render_history() -> html.Div:
@@ -650,13 +676,19 @@ def _build_results_view(slug: str) -> html.Div:
         dbc.CardBody(
             [
                 html.H5("Run metadata"),
-                html.Small(
-                    f"{cfg['n_items']} images | {cfg.get('n_per_class')} per class | "
-                    f"{cfg.get('n_classes')} classes | seed {cfg['sample_seed']} | "
-                    f"template {cfg['template_id']}"
+                html.Ul(
+                    [
+                        html.Li([html.B("Run: "), cfg['run_slug']]),
+                        html.Li([html.B("Started: "), cfg['started_at']]),
+                        html.Li([html.B("Images per class: "), cfg.get('n_per_class')]),
+                        html.Li([html.B("Classes: "), cfg.get('n_classes')]),
+                        html.Li([html.B("Total images: "), cfg['n_items']]),
+                        html.Li([html.B("Sample seed: "), cfg['sample_seed']]),
+                        html.Li([html.B("Prompt template: "), cfg['template_id']]),
+                        html.Li([html.B("Note: "), cfg.get('run_note') or '(none)']),
+                    ],
+                    className="mb-0",
                 ),
-                html.Br(),
-                html.Small(f"Note: {cfg.get('run_note') or '(none)'}"),
             ]
         ),
         className="mb-3",
@@ -678,7 +710,6 @@ def _build_results_view(slug: str) -> html.Div:
 
     figs = [
         dcc.Graph(figure=figures.accuracy_bar(nonempty, colors)),
-        dcc.Graph(figure=figures.per_class_accuracy_bars(nonempty, colors)),
     ]
 
     # Lay out figures two-per-row.
@@ -691,10 +722,13 @@ def _build_results_view(slug: str) -> html.Div:
         fig_rows.append(dbc.Row(cols, className="mb-2"))
 
     # Per-class accuracy difference chart (only shown with 2+ models).
-    diff_fig = figures.per_class_diff_bars(nonempty, colors)
+    diff_fig = figures.per_class_diff_bars(nonempty, colors) if len(nonempty) >= 2 else None
     diff_block = (
         [dcc.Graph(figure=diff_fig, className="mt-2")] if diff_fig is not None else []
     )
+
+    # Per-class accuracy bars (comes after diff).
+    per_class_block = [dcc.Graph(figure=figures.per_class_accuracy_bars(nonempty, colors))]
 
     # Confusion matrix with a raw/normalized toggle (re-rendered by callback).
     confusion_block = html.Div(
@@ -728,7 +762,7 @@ def _build_results_view(slug: str) -> html.Div:
             mt_disp = mt.copy()
             mt_disp["p_value"] = mt_disp["p_value"].apply(lambda v: f"{v:.4f}")
             mcnemar_block = [
-                html.H5("Model comparison — McNemar test", className="mt-3"),
+                html.H5("McNemar test", className="mt-3"),
                 html.Small(
                     "Exact two-sided McNemar test on discordant items "
                     "(every model saw the identical images). p < 0.05 = a "
@@ -742,22 +776,34 @@ def _build_results_view(slug: str) -> html.Div:
                 ),
             ]
 
-    # Most-confused pairs, one small table per model.
-    confused_blocks = [html.H5("Most-confused pairs", className="mt-3")]
+    # Most-confused pairs, two per row.
+    confused_items = []
     for res in nonempty:
         mc = scoring.most_confused(res.df, top_n=8)
         if mc.empty:
             continue
         mc_disp = mc.rename(columns={"true_char": "true", "pred_char": "predicted"})
-        confused_blocks.append(html.Small(res.model_label, className="fw-bold"))
-        confused_blocks.append(
-            DataTable(
-                data=mc_disp.to_dict("records"),
-                columns=[{"name": c, "id": c} for c in ["true", "predicted", "count"]],
-                style_cell={"fontSize": 12, "textAlign": "left"},
-                page_size=8,
-            )
-        )
+        confused_items.append(html.Div(
+            [
+                html.Small(res.model_label, className="fw-bold"),
+                DataTable(
+                    data=mc_disp.to_dict("records"),
+                    columns=[{"name": c, "id": c} for c in ["true", "predicted", "count"]],
+                    style_cell={"fontSize": 12, "textAlign": "left"},
+                    page_size=8,
+                ),
+            ]
+        ))
+
+    confused_rows = []
+    for i in range(0, len(confused_items), 2):
+        pair = confused_items[i : i + 2]
+        cols = [dbc.Col(pair[0], width=6)]
+        if len(pair) == 2:
+            cols.append(dbc.Col(pair[1], width=6))
+        confused_rows.append(dbc.Row(cols, className="mb-2"))
+
+    confused_blocks = [html.H5("Most-confused pairs", className="mt-3")] + confused_rows
 
     # Item explorer.
     matrix = scoring.outcome_matrix(nonempty)
@@ -768,23 +814,7 @@ def _build_results_view(slug: str) -> html.Div:
         columns=[{"name": c, "id": c} for c in explorer_cols if c in matrix.columns],
         style_cell={"fontSize": 12, "textAlign": "left"},
         page_size=15,
-        style_data_conditional=[
-            {"if": {"filter_query": f'{{{lab}}} = "correct"', "column_id": lab},
-             "backgroundColor": "#d4edda"}
-            for lab in labels
-        ] + [
-            {"if": {"filter_query": f'{{{lab}}} = "incorrect"', "column_id": lab},
-             "backgroundColor": "#f8d7da"}
-            for lab in labels
-        ] + [
-            {"if": {"filter_query": f'{{{lab}}} = "parse-failure"', "column_id": lab},
-             "backgroundColor": "#e2e3e5", "color": "#6c757d"}
-            for lab in labels
-        ] + [
-            {"if": {"filter_query": f'{{{lab}}} = "error"', "column_id": lab},
-             "backgroundColor": "#fff3cd", "color": "#856404"}
-            for lab in labels
-        ],
+        style_data_conditional=_item_table_base_styles(labels),
     )
 
     return html.Div(
@@ -794,6 +824,7 @@ def _build_results_view(slug: str) -> html.Div:
             comp_table,
             *fig_rows,
             *diff_block,
+            *per_class_block,
             confusion_block,
             *mcnemar_block,
             *confused_blocks,
