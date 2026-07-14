@@ -20,7 +20,6 @@ import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
-    matthews_corrcoef,
     precision_recall_fscore_support,
 )
 
@@ -82,17 +81,6 @@ def _y_true_pred(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     return y_true, y_pred
 
 
-def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """95% Wilson score interval for a binomial proportion k/n."""
-    if n == 0:
-        return (float("nan"), float("nan"))
-    phat = k / n
-    denom = 1.0 + z * z / n
-    center = (phat + z * z / (2 * n)) / denom
-    margin = (z / denom) * math.sqrt(phat * (1 - phat) / n + z * z / (4 * n * n))
-    return (max(0.0, center - margin), min(1.0, center + margin))
-
-
 def _bootstrap_ci(
     values: np.ndarray,
     resamples: int = BOOTSTRAP_RESAMPLES,
@@ -134,7 +122,7 @@ def _bootstrap_metric_ci(
 
 
 def _per_class_prf(df: pd.DataFrame) -> pd.DataFrame:
-    """Precision, recall, F1, accuracy, support, and Wilson recall CI per class.
+    """Precision, recall, F1, accuracy, and support per class.
 
     Computed with scikit-learn. Parse failures count as an incorrect prediction
     (a false negative for the true class, never a false positive for any class).
@@ -149,7 +137,6 @@ def _per_class_prf(df: pd.DataFrame) -> pd.DataFrame:
     for i, c in enumerate(classes):
         support_c = int(support[i])
         tp = int(((y_true == c) & (y_pred == c)).sum())
-        lo, hi = wilson_interval(tp, support_c)
         rows.append(
             {
                 "true_char": c,
@@ -158,8 +145,6 @@ def _per_class_prf(df: pd.DataFrame) -> pd.DataFrame:
                 "accuracy": float(recall[i]),
                 "precision": float(precision[i]),
                 "recall": float(recall[i]),
-                "recall_lo": lo,
-                "recall_hi": hi,
                 "f1": float(f1[i]),
             }
         )
@@ -190,10 +175,8 @@ def compute_summary(df: pd.DataFrame) -> dict:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         macro_f1 = float(_macro_f1(y_true, y_pred))
-        mcc = float(matthews_corrcoef(y_true, y_pred))
 
     macro_f1_ci = _bootstrap_metric_ci(y_true, y_pred, _macro_f1)
-    mcc_ci = _bootstrap_metric_ci(y_true, y_pred, matthews_corrcoef)
 
     return {
         "n_items": n,
@@ -203,20 +186,18 @@ def compute_summary(df: pd.DataFrame) -> dict:
         "accuracy_ci": [acc_lo, acc_hi],
         "macro_f1": macro_f1,
         "macro_f1_ci": [macro_f1_ci[0], macro_f1_ci[1]],
-        "mcc": mcc,
-        "mcc_ci": [mcc_ci[0], mcc_ci[1]],
         "parse_failure_rate": parse_failures / n,
         "provider_error_rate": provider_errors / n,
     }
 
 
 def per_class_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-class accuracy, precision, recall (+Wilson CI), F1, and support."""
+    """Per-class accuracy, precision, recall, F1, and support."""
     if df.empty:
         return pd.DataFrame(
             columns=[
                 "true_char", "support", "n_correct", "accuracy",
-                "precision", "recall", "recall_lo", "recall_hi", "f1",
+                "precision", "recall", "f1",
             ]
         )
     return _per_class_prf(df)
@@ -261,15 +242,13 @@ class ModelResult:
 _COMPARISON_METRICS = [
     "accuracy",
     "macro_f1",
-    "mcc",
     "parse_failure_rate",
     "provider_error_rate",
 ]
 
 # Expected metric values for a uniform-random classifier over the 36 classes:
-# accuracy and macro F1 both equal 1/C, while MCC is 0 (no better than chance).
-# Shown as a baseline column so absolute scores are interpretable against random
-# guessing.
+# accuracy and macro F1 both equal 1/C. Shown as a baseline column so absolute
+# scores are interpretable against random guessing.
 _CHANCE_LABEL = f"Chance (1/{N_CLASSES})"
 
 
@@ -278,7 +257,6 @@ def _chance_baseline() -> dict:
     return {
         "accuracy": p,
         "macro_f1": p,
-        "mcc": 0.0,
         "parse_failure_rate": 0.0,
         "provider_error_rate": 0.0,
     }
@@ -333,16 +311,40 @@ def _mcnemar_exact_p(b: int, c: int) -> float:
     return min(1.0, 2.0 * tail)
 
 
-def mcnemar_table(results: list[ModelResult]) -> pd.DataFrame:
+def _holm_bonferroni(pvals: list[float]) -> list[float]:
+    """Holm-Bonferroni step-down correction for a family of p-values.
+
+    Returns adjusted p-values in the original order. Controls the family-wise
+    error rate across all pairwise comparisons while being uniformly more
+    powerful than plain Bonferroni. With a single comparison it returns the
+    p-value unchanged.
+    """
+    m = len(pvals)
+    if m == 0:
+        return []
+    order = sorted(range(m), key=lambda i: pvals[i])
+    adjusted = [0.0] * m
+    running = 0.0
+    for rank, idx in enumerate(order):
+        running = max(running, min(1.0, (m - rank) * pvals[idx]))
+        adjusted[idx] = running
+    return adjusted
+
+
+def mcnemar_table(results: list[ModelResult], alpha: float = 0.05) -> pd.DataFrame:
     """Exact two-sided McNemar test for every model pair on shared items.
 
     All models see the identical images, so correctness is paired per item. For
     each pair we report the discordant counts (only-A-correct, only-B-correct),
-    the exact p-value, and which model did better on discordant items.
+    the exact p-value, a Holm-Bonferroni-corrected p-value (``p_holm``) that
+    accounts for testing every pair at once, a ``significant`` flag at ``alpha``
+    after correction, and which model did better on discordant items. Rows are
+    sorted most-significant first so the meaningful differences surface at the
+    top even with many models.
     """
     cols = [
-        "model_a", "model_b", "only_a_correct", "only_b_correct",
-        "n_discordant", "p_value", "better",
+        "model_a", "model_b", "better", "only_a_correct", "only_b_correct",
+        "n_discordant", "p_value", "p_holm", "significant",
     ]
     if len(results) < 2:
         return pd.DataFrame(columns=cols)
@@ -370,11 +372,17 @@ def mcnemar_table(results: list[ModelResult]) -> pd.DataFrame:
                 {
                     "model_a": labels[i],
                     "model_b": labels[j],
+                    "better": better,
                     "only_a_correct": b,
                     "only_b_correct": c,
                     "n_discordant": b + c,
                     "p_value": p,
-                    "better": better,
                 }
             )
-    return pd.DataFrame(rows, columns=cols)
+    p_holm = _holm_bonferroni([r["p_value"] for r in rows])
+    for row, ph in zip(rows, p_holm):
+        row["p_holm"] = ph
+        row["significant"] = bool(ph < alpha)
+    table = pd.DataFrame(rows, columns=cols)
+    return table.sort_values(["p_holm", "p_value"]).reset_index(drop=True)
+

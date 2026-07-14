@@ -29,7 +29,7 @@ from pathlib import Path
 import pandas as pd
 from IPython.display import HTML, Image, Markdown, display
 
-from aslbench import config, figures, runner, scoring
+from aslbench import config, content, figures, runner, scoring
 
 run_dir = Path(run_dir)
 run_slug = run_dir.name
@@ -54,10 +54,12 @@ def _show_fig(fig):
 
 
 def _fmt_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Format float columns, replacing NaN with '--'."""
+    """Format float columns with 3 dp; booleans as yes/no; NaN as '--'."""
     out = df.copy()
     for col in out.select_dtypes(include="float").columns:
         out[col] = out[col].apply(lambda v: f"{v:.3f}" if pd.notna(v) else "--")
+    for col in out.select_dtypes(include="bool").columns:
+        out[col] = out[col].apply(lambda v: "yes" if v else "no")
     return out
 ```
 
@@ -73,6 +75,11 @@ lines = [
     f"- **Total images:** {config_data['n_items']}",
     f"- **Sample seed:** {config_data['sample_seed']}",
     f"- **Prompt template:** {config_data['template_id']}",
+    "- **Models benchmarked:** "
+    + ", ".join(
+        f"{m['model_label']} [{m['provider_label']}]"
+        for m in config_data["models"]
+    ),
     f"- **Note:** {config_data.get('run_note') or '(none)'}",
 ]
 Markdown("\n".join(lines))
@@ -99,22 +106,7 @@ which encode the true class, are never shown to the models.
 if nonempty:
     display(HTML(_fmt_table(scoring.comparison_table(nonempty)).to_html(index=False)))
     display(Markdown(
-        "- **Accuracy** — the share of images the model labelled correctly, from "
-        "0 to 1; simply how often it is right.\n"
-        "- **Macro F1** — the model's reliability averaged across all 36 "
-        "characters, giving each character equal weight and blending how often "
-        "its guesses are right (precision) with how often it finds each "
-        "character (recall). It rewards models that do well on every character, "
-        "not just the easy ones.\n"
-        "- **MCC** — the Matthews correlation coefficient: a single overall "
-        "quality score from -1 to +1 that accounts for every kind of mistake at "
-        "once. 0 means no better than random guessing and 1 is perfect.\n"
-        "- **Parse failure rate** — how often the model's reply could not be read "
-        "as a valid answer (it did not clearly name one of the 36 characters).\n"
-        "- **Provider error rate** — how often the model's API failed to return "
-        "any response at all (timeouts or errors).\n"
-        "- **Chance (1/36)** — a reference column showing what each score would be "
-        "for a model that guesses at random."
+        "\n".join(f"- {d}" for d in content.METRIC_DEFINITIONS)
     ))
 else:
     display(Markdown("No results recorded."))
@@ -136,21 +128,8 @@ if diff_fig is not None:
 ```{python}
 # | echo: false
 if nonempty:
-    _show_fig(figures.per_class_accuracy_bars(nonempty, colors))
-```
-
-```{python}
-# | echo: false
-if nonempty:
     _show_fig(figures.confusion_heatmaps(nonempty, colors))
-    display(Markdown(
-        "**How to read this:** each row is the true character and each column is "
-        "what the model guessed. Cells are row-normalized, so a value is the "
-        "fraction of that character's images that received the correct guess; the diagonal is "
-        "the model's recall for each character. A bright diagonal means accurate "
-        "recognition, while bright off-diagonal cells show characters the model "
-        "routinely mixes up (e.g. reading 'O' as '0')."
-    ))
+    display(Markdown(content.CONFUSION_NOTE))
 ```
 
 ```{python}
@@ -160,20 +139,7 @@ if len(nonempty) >= 2:
     if not mt.empty:
         display(Markdown("### McNemar test"))
         display(HTML(_fmt_table(mt).to_html(index=False)))
-        display(Markdown(
-            "**What this answers:** whether two models have genuinely different "
-            "accuracy, judged only on the images where they disagree. Because "
-            "every model saw the exact same images, we compare them "
-            "image-by-image. The test looks only at *discordant items*, that is, images "
-            "where one model was right and the other was wrong. Images they both "
-            "got right or both got wrong say nothing about which is better, so "
-            "they are set aside. If those disagreements are far more lopsided "
-            "toward one model than a coin flip would explain, the difference is "
-            "judged real. In the table, **only_a_correct** and **only_b_correct** "
-            "count the discordant images each model won, **better** names the "
-            "model ahead on them, and a **p_value** below 0.05 means the gap is "
-            "statistically significant (unlikely to be luck)."
-        ))
+        display(Markdown(content.MCNEMAR_NOTE))
 ```
 
 ## Per-model detail

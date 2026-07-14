@@ -36,7 +36,7 @@ def test_comparison_table_columns():
     # Random-chance baseline column is always present.
     assert any(c.startswith("Chance") for c in table.columns)
     metrics = list(table["metric"])
-    for m in ["accuracy", "macro_f1", "mcc"]:
+    for m in ["accuracy", "macro_f1"]:
         assert m in metrics
 
 
@@ -45,7 +45,6 @@ def test_comparison_table_chance_baseline():
     chance_col = next(c for c in table.columns if c.startswith("Chance"))
     p = 1.0 / scoring.N_CLASSES
     assert table.loc["accuracy", chance_col] == p
-    assert table.loc["mcc", chance_col] == 0.0
 
 
 def test_outcome_matrix():
@@ -66,6 +65,9 @@ def test_mcnemar_table():
     assert row["n_discordant"] == 3
     assert row["better"] == "Model B"
     assert 0.0 <= row["p_value"] <= 1.0
+    # A single pair means the Holm correction is a no-op.
+    assert row["p_holm"] == row["p_value"]
+    assert row["significant"] == bool(row["p_holm"] < 0.05)
 
 
 def test_mcnemar_single_model_empty():

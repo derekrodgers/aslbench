@@ -83,55 +83,6 @@ def accuracy_bar(results: list[ModelResult], colors: dict[str, str]) -> go.Figur
     return fig
 
 
-def per_class_accuracy_bars(results: list[ModelResult], colors: dict[str, str]) -> go.Figure:
-    """Grouped bars of per-class accuracy (=recall) with 95% Wilson CIs."""
-    fig = go.Figure()
-    order = [c for c in CLASSES]
-    for res in results:
-        table = scoring.per_class_table(res.df)
-        if table.empty:
-            continue
-        acc_map = dict(zip(table["true_char"], table["accuracy"]))
-        lo_map = dict(zip(table["true_char"], table["recall_lo"]))
-        hi_map = dict(zip(table["true_char"], table["recall_hi"]))
-        present = [c for c in order if c in acc_map]
-        y = [acc_map[c] for c in present]
-        err_plus = [hi_map[c] - acc_map[c] for c in present]
-        err_minus = [acc_map[c] - lo_map[c] for c in present]
-        customdata=[[lo_map[c], hi_map[c]] for c in present]
-        fig.add_bar(
-            name=res.model_label,
-            x=present,
-            y=y,
-            marker_color=colors.get(res.model_label),
-            error_y=dict(type="data", symmetric=False, array=err_plus, arrayminus=err_minus),
-            customdata=customdata,
-            hovertemplate=(
-                "<b>%{fullData.name}</b><br>"
-                "Class: %{x}<br>"
-                "Accuracy: %{y:.3f}<br>"
-                "95% CI: [%{customdata[0]:.3f}, %{customdata[1]:.3f}]"
-                "<extra></extra>"
-            ),
-        )
-    fig.add_hline(
-        y=_CHANCE,
-        line_dash="dash",
-        line_color="grey",
-        annotation_text=f"chance (1/{N_CLASSES})",
-        annotation_position="top left",
-    )
-    fig.update_layout(
-        barmode="group",
-        xaxis=dict(title="Class", type="category"),
-        yaxis=dict(title="Accuracy (recall)", range=[0, 1]),
-        title=dict(text="Per-class accuracy (95% Wilson CI)", pad=dict(t=15, b=15)),
-        legend=_LEGEND,
-        margin=_MARGIN_T,
-    )
-    return fig
-
-
 def confusion_heatmaps(
     results: list[ModelResult],
     colors: dict[str, str],

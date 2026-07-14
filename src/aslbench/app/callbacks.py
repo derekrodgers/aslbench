@@ -12,7 +12,7 @@ import dash_bootstrap_components as dbc
 from dash import ALL, MATCH, Input, Output, State, callback_context, dcc, html, no_update
 from dash.dash_table import DataTable
 
-from .. import figures, runner, scoring
+from .. import content, figures, runner, scoring
 from ..config import load_providers
 from ..dataset import available_classes
 from ..prompts import render_prompt
@@ -100,41 +100,6 @@ _NO_CELL_FOCUS = [{
         " background-color: inherit !important;"
     ),
 }]
-
-
-# Layperson-friendly definitions of the comparison-table metrics, shown as a
-# bulleted list beneath the table (mirrors the report).
-_METRIC_DEFINITIONS = [
-    ("Accuracy", "the share of images the model labelled correctly, from 0 to 1 "
-     "; simply how often it is right."),
-    ("Macro F1", "the model's reliability averaged across all 36 characters, "
-     "giving each character equal weight and blending how often its guesses are "
-     "right (precision) with how often it finds each character (recall). It "
-     "rewards models that do well on every character, not just the easy ones."),
-    ("MCC", "the Matthews correlation coefficient: a single overall quality "
-     "score from -1 to +1 that accounts for every kind of mistake at once. "
-     "0 means no better than random guessing and 1 is perfect."),
-    ("Parse failure rate", "how often the model's reply could not be read as a "
-     "valid answer (it did not clearly name one of the 36 characters)."),
-    ("Provider error rate", "how often the model's API failed to return any "
-     "response at all (timeouts or errors)."),
-    ("Chance (1/36)", "a reference column showing what each score would be for a "
-     "model that guesses at random."),
-]
-
-_MCNEMAR_NOTE = (
-    "What this answers: whether two models have genuinely different accuracy, "
-    "judged only on the images where they disagree. Because every model saw the "
-    "exact same images, we compare them image-by-image. The test looks only at "
-    "discordant items, that is, images where one model was right and the other was "
-    "wrong. Images they both got right or both got wrong say nothing about which "
-    "is better, so they are set aside. If those disagreements are far more "
-    "lopsided toward one model than a coin flip would explain, the difference is "
-    "judged real. In the table, only_a_correct and only_b_correct count the "
-    "discordant images each model won, better names the model ahead on them, and "
-    "a p_value below 0.05 means the gap is statistically significant (unlikely "
-    "to be luck)."
-)
 
 
 def register(app: dash.Dash) -> None:  # noqa: C901 - a single cohesive registration block
@@ -736,6 +701,13 @@ def _build_results_view(slug: str) -> html.Div:
                         html.Li([html.B("Total images: "), cfg['n_items']]),
                         html.Li([html.B("Sample seed: "), cfg['sample_seed']]),
                         html.Li([html.B("Prompt template: "), cfg['template_id']]),
+                        html.Li([
+                            html.B("Models benchmarked: "),
+                            ", ".join(
+                                f"{m['model_label']} [{m['provider_label']}]"
+                                for m in cfg['models']
+                            ),
+                        ]),
                         html.Li([html.B("Note: "), cfg.get('run_note') or '(none)']),
                     ],
                     className="mb-0",
@@ -760,22 +732,15 @@ def _build_results_view(slug: str) -> html.Div:
         css=_NO_CELL_FOCUS,
     )
     metric_defs = html.Ul(
-        [html.Li([html.B(f"{term}: "), text]) for term, text in _METRIC_DEFINITIONS],
+        [html.Li(content.to_dash_children(d)) for d in content.METRIC_DEFINITIONS],
         className="small text-muted mt-2",
     )
 
-    figs = [
-        dcc.Graph(figure=figures.accuracy_bar(nonempty, colors)),
-    ]
-
-    # Lay out figures two-per-row.
-    fig_rows = []
-    for i in range(0, len(figs), 2):
-        pair = figs[i : i + 2]
-        cols = [dbc.Col(f, width=6) for f in pair]
-        if len(cols) == 1:
-            cols[0] = dbc.Col(pair[0], width=12)
-        fig_rows.append(dbc.Row(cols, className="mb-2"))
+    # Accuracy+F1 chart, full width.
+    top_row = dbc.Row(
+        [dbc.Col(dcc.Graph(figure=figures.accuracy_bar(nonempty, colors)), width=12)],
+        className="mb-2",
+    )
 
     # Per-class accuracy difference chart (only shown with 2+ models).
     diff_fig = figures.per_class_diff_bars(nonempty, colors) if len(nonempty) >= 2 else None
@@ -783,22 +748,13 @@ def _build_results_view(slug: str) -> html.Div:
         [dcc.Graph(figure=diff_fig, className="mt-2")] if diff_fig is not None else []
     )
 
-    # Per-class accuracy bars (comes after diff).
-    per_class_block = [dcc.Graph(figure=figures.per_class_accuracy_bars(nonempty, colors))]
-
     # Confusion matrix (row-normalized recall; classes are always balanced).
     confusion_block = html.Div(
         [
             html.H5("Confusion matrix", className="mt-3"),
             dcc.Graph(figure=figures.confusion_heatmaps(nonempty, colors)),
             html.Small(
-                "How to read this: each row is the true character and each "
-                "column is what the model guessed. Cells are row-normalized, so "
-                "a value is the fraction of that character's images that received the correct "
-                "guess; the diagonal is the model's recall for each character. A "
-                "bright diagonal means accurate recognition, while bright "
-                "off-diagonal cells show characters the model routinely mixes up "
-                "(e.g. reading 'O' as '0').",
+                content.to_dash_children(content.CONFUSION_NOTE),
                 className="text-muted",
             ),
         ]
@@ -811,6 +767,8 @@ def _build_results_view(slug: str) -> html.Div:
         if not mt.empty:
             mt_disp = mt.copy()
             mt_disp["p_value"] = mt_disp["p_value"].apply(lambda v: f"{v:.4f}")
+            mt_disp["p_holm"] = mt_disp["p_holm"].apply(lambda v: f"{v:.4f}")
+            mt_disp["significant"] = mt_disp["significant"].apply(lambda v: "yes" if v else "no")
             mcnemar_block = [
                 html.H5("McNemar test", className="mt-3"),
                 DataTable(
@@ -820,7 +778,7 @@ def _build_results_view(slug: str) -> html.Div:
                     css=_NO_CELL_FOCUS,
                 ),
                 html.Small(
-                    _MCNEMAR_NOTE,
+                    content.to_dash_children(content.MCNEMAR_NOTE),
                     className="text-muted d-block mt-1",
                 ),
             ]
@@ -874,9 +832,8 @@ def _build_results_view(slug: str) -> html.Div:
             html.H5("Comparison"),
             comp_table,
             metric_defs,
-            *fig_rows,
+            top_row,
             *diff_block,
-            *per_class_block,
             confusion_block,
             *mcnemar_block,
             *confused_blocks,

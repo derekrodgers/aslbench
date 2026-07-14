@@ -73,16 +73,12 @@ def test_per_class_table():
     assert t.loc["B", "n_correct"] == 1
     # Per-class accuracy equals recall in single-label classification.
     assert t.loc["A", "accuracy"] == t.loc["A", "recall"]
-    # Wilson CI brackets the point estimate.
-    assert t.loc["A", "recall_lo"] <= t.loc["A", "recall"] <= t.loc["A", "recall_hi"]
 
 
 def test_new_summary_metrics():
     summ = scoring.compute_summary(_fixture())
-    assert -1.0 <= summ["mcc"] <= 1.0
-    for key in ("macro_f1_ci", "mcc_ci"):
-        lo, hi = summ[key]
-        assert lo <= hi
+    lo, hi = summ["macro_f1_ci"]
+    assert lo <= hi
 
 
 def test_confusion_long_includes_parse_failures():
